@@ -1,4 +1,4 @@
-package db
+package dbops
 
 import (
 	"database/sql"
@@ -11,7 +11,7 @@ type Store struct {
 	name string
 }
 
-var errNilDB = errors.New("db: nil *sql.DB")
+var errNilDB = errors.New("dbops: nil *sql.DB")
 
 // NewStore returns a Store that uses pool for all queries.
 func NewStore(pool *sql.DB, name string) *Store {

@@ -1,4 +1,4 @@
-package db
+package dbops
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	types "juancavallotti.com/recipe-types"
 )
 
-func (s *Store) UpdateRecipe(ctx context.Context, recipe types.Recipe) error {
+func (s *Store) CreateRecipe(ctx context.Context, recipe types.Recipe) error {
 	if s.db == nil {
 		return errNilDB
 	}

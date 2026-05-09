@@ -1,11 +1,11 @@
 package service
 
-import "juancavallotti.com/recipes-repo/internal/db"
+import "juancavallotti.com/recipes-repo/internal/dbops"
 
 type Service struct {
-	store *db.Store
+	store *dbops.Store
 }
 
-func NewService(store *db.Store) *Service {
+func NewService(store *dbops.Store) *Service {
 	return &Service{store: store}
 }
