@@ -1,0 +1,23 @@
+version: "3"
+
+tasks:
+  build:image:db:
+    desc: Build the Postgres image ({{.IMAGE_DB}}:{{.TAG}})
+    cmds:
+      - docker build -t {{.IMAGE_DB}}:{{.TAG}} -f database/Dockerfile database
+
+  db:up:
+    desc: Start local Postgres in Docker (image {{.IMAGE_DB}}:{{.TAG}} — run build:image:db first if missing)
+    cmds:
+      - mkdir -p database/data
+      - docker rm -f recipes-db-local 2>/dev/null || true
+      - |
+        docker run -d --name recipes-db-local \
+          -p 5432:5432 \
+          -v "{{.ROOT_DIR}}/database/data:/var/lib/postgresql/data" \
+          {{.IMAGE_DB}}:{{.TAG}}
+
+  db:down:
+    desc: Stop and remove the local Postgres container (keeps database/data on disk)
+    cmds:
+      - docker rm -f recipes-db-local 2>/dev/null || true

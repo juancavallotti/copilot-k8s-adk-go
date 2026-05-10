@@ -1,0 +1,7 @@
+version: "3"
+
+tasks:
+  helm:lint:
+    desc: Lint the recipes Helm chart
+    cmds:
+      - helm lint helm/recipes

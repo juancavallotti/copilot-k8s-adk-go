@@ -1,0 +1,46 @@
+version: "3"
+
+tasks:
+  install:web:
+    desc: npm ci in web/
+    cmds:
+      - npm ci
+
+  build:web:
+    desc: Production build of the web app (output in web/build)
+    cmds:
+      - npm run build
+
+  build:image:web:
+    desc: Build the React Router web image ({{.IMAGE_WEB}}:{{.TAG}})
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - docker build -t {{.IMAGE_WEB}}:{{.TAG}} -f web/Dockerfile web
+
+  test:web:
+    desc: vitest in web/
+    cmds:
+      - npm test
+
+  typecheck:web:
+    desc: Typecheck web (react-router typegen + tsc)
+    cmds:
+      - npm run typecheck
+
+  dev:web:
+    desc: Run the Vite / React Router dev server (proxies /api → 127.0.0.1:4000)
+    interactive: true
+    cmds:
+      - npm run dev
+
+  clean:web:
+    desc: Remove web/build
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - rm -rf web/build
+
+  clean:deps:
+    desc: Remove web/node_modules (run task install:web afterward)
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - rm -rf web/node_modules

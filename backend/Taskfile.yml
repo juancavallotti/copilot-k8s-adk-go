@@ -1,0 +1,35 @@
+version: "3"
+
+tasks:
+  install:backend:
+    desc: go mod download for the backend workspace
+    cmds:
+      - go mod download
+
+  build:backend:
+    desc: Build the API binary with Go (writes backend/api/recipes-api)
+    cmds:
+      - CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o api/recipes-api ./api
+
+  build:image:api:
+    desc: Build the Go API image ({{.IMAGE_API}}:{{.TAG}})
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - docker build -t {{.IMAGE_API}}:{{.TAG}} -f backend/Dockerfile backend
+
+  test:backend:
+    desc: go test for all workspace modules
+    cmds:
+      - go test ./api/... ./repo/... ./types/... ./cli/...
+
+  dev:api:
+    desc: Run the API locally on :4000 (expects Postgres; see task db:up)
+    interactive: true
+    cmds:
+      - go run ./api
+
+  clean:backend:
+    desc: Remove backend/api/recipes-api if present
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - rm -f backend/api/recipes-api
