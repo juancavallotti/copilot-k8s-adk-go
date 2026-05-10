@@ -21,3 +21,4 @@ database/data/
 .vscode/
 *.swp
 *.swo
+.devspace/

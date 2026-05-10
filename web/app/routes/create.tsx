@@ -1,8 +1,13 @@
-import { type FormEvent } from "react";
-import { useNavigate } from "react-router";
+import { type FormEvent, useEffect } from "react";
+import {
+  redirect,
+  useActionData,
+  useNavigation,
+  useSubmit,
+} from "react-router";
 
 import { RecipeEditor } from "~/components/recipe-editor";
-import { createRecipe } from "~/lib/recipe-api";
+import type { CreateRecipeBody } from "~/lib/recipe-api";
 import { draftToCreateBody, emptyRecipeDraft } from "~/lib/recipe-draft";
 import {
   CreateRecipeProvider,
@@ -12,6 +17,32 @@ import { CreateRecipeActionType } from "~/state/create-recipe/types";
 
 import type { Route } from "./+types/create";
 
+export async function action({ request }: Route.ActionArgs) {
+  const { createRecipe } = await import("~/lib/recipes-http.server");
+  if (request.method !== "POST") {
+    return null;
+  }
+  let body: CreateRecipeBody;
+  try {
+    body = (await request.json()) as CreateRecipeBody;
+  } catch {
+    return { ok: false as const, error: "Invalid request body." };
+  }
+  if (typeof body.name !== "string") {
+    return { ok: false as const, error: "Invalid recipe data." };
+  }
+  try {
+    const created = await createRecipe(request, body);
+    return redirect(`/recipe/${created.id}`);
+  } catch (err) {
+    return {
+      ok: false as const,
+      error:
+        err instanceof Error ? err.message : "Something went wrong",
+    };
+  }
+}
+
 export function meta({}: Route.MetaArgs) {
   return [
     { title: "Create recipe · Recipe manager" },
@@ -20,24 +51,40 @@ export function meta({}: Route.MetaArgs) {
 }
 
 function CreateRecipeContent() {
-  const navigate = useNavigate();
+  const actionData = useActionData<typeof action>();
+  const submit = useSubmit();
+  const navigation = useNavigation();
   const { state, dispatch } = useCreateRecipeState();
   const { draft, submitting, error } = state;
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    dispatch({ type: CreateRecipeActionType.SUBMIT_START });
-    try {
-      const created = await createRecipe(draftToCreateBody(draft));
-      navigate(`/recipe/${created.id}`);
-    } catch (err) {
+  const navSubmitting =
+    navigation.state === "submitting" &&
+    navigation.location?.pathname === "/create";
+
+  useEffect(() => {
+    if (
+      actionData != null &&
+      typeof actionData === "object" &&
+      "ok" in actionData &&
+      actionData.ok === false
+    ) {
       dispatch({
         type: CreateRecipeActionType.SUBMIT_ERROR,
-        data:
-          err instanceof Error ? err.message : "Something went wrong",
+        data: actionData.error,
       });
     }
+  }, [actionData, dispatch]);
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    dispatch({ type: CreateRecipeActionType.SUBMIT_START });
+    submit(draftToCreateBody(draft), {
+      method: "POST",
+      encType: "application/json",
+    });
   }
+
+  const busy = submitting || navSubmitting;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -58,7 +105,7 @@ function CreateRecipeContent() {
           onChange={(next) =>
             dispatch({ type: CreateRecipeActionType.UPDATE_DRAFT, data: next })
           }
-          disabled={submitting}
+          disabled={busy}
         />
 
         {error ? (
@@ -73,14 +120,14 @@ function CreateRecipeContent() {
         <div className="mt-8 flex flex-wrap items-center gap-3 border-t border-zinc-100 pt-6 dark:border-zinc-800">
           <button
             type="submit"
-            disabled={submitting}
+            disabled={busy}
             className="inline-flex items-center justify-center rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
           >
-            {submitting ? "Saving…" : "Save recipe"}
+            {busy ? "Saving…" : "Save recipe"}
           </button>
           <button
             type="button"
-            disabled={submitting}
+            disabled={busy}
             className="text-sm font-medium text-zinc-600 underline-offset-2 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-zinc-100"
             onClick={() =>
               dispatch({

@@ -1,8 +1,16 @@
 import { type FormEvent, useEffect } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import {
+  Link,
+  redirect,
+  useActionData,
+  useLoaderData,
+  useNavigation,
+  useParams,
+  useSubmit,
+} from "react-router";
 
 import { RecipeEditor } from "~/components/recipe-editor";
-import { getRecipe, replaceRecipe } from "~/lib/recipe-api";
+import type { Recipe } from "~/lib/recipe-api";
 import { draftToRecipeForReplace } from "~/lib/recipe-draft";
 import {
   EditRecipeProvider,
@@ -12,7 +20,61 @@ import { EditRecipeActionType } from "~/state/edit-recipe/types";
 
 import type { Route } from "./+types/recipe-edit";
 
-export function meta({}: Route.MetaArgs) {
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const { getRecipe } = await import("~/lib/recipes-http.server");
+  const { id } = params;
+  if (id == null || id === "") {
+    return { recipe: null, error: "Missing recipe id." };
+  }
+  try {
+    const recipe = await getRecipe(request, id);
+    return { recipe, error: null as string | null };
+  } catch (err) {
+    return {
+      recipe: null,
+      error:
+        err instanceof Error ? err.message : "Something went wrong",
+    };
+  }
+}
+
+export async function action({ request, params }: Route.ActionArgs) {
+  const { replaceRecipe } = await import("~/lib/recipes-http.server");
+  const { id } = params;
+  if (id == null || id === "") {
+    return { ok: false as const, error: "Missing recipe id." };
+  }
+  if (request.method !== "POST") {
+    return null;
+  }
+  let recipePayload: Recipe;
+  try {
+    recipePayload = (await request.json()) as Recipe;
+  } catch {
+    return { ok: false as const, error: "Invalid request body." };
+  }
+  if (recipePayload.id !== id) {
+    return { ok: false as const, error: "Recipe id mismatch." };
+  }
+  try {
+    await replaceRecipe(request, recipePayload);
+    return redirect(`/recipe/${id}`);
+  } catch (err) {
+    return {
+      ok: false as const,
+      error:
+        err instanceof Error ? err.message : "Something went wrong",
+    };
+  }
+}
+
+export function meta({ data }: Route.MetaArgs) {
+  if (data?.recipe != null) {
+    return [
+      { title: `Edit ${data.recipe.name} · Recipe manager` },
+      { name: "description", content: "Update a recipe" },
+    ];
+  }
   return [
     { title: "Edit recipe · Recipe manager" },
     { name: "description", content: "Update a recipe" },
@@ -21,7 +83,10 @@ export function meta({}: Route.MetaArgs) {
 
 function RecipeEditContent() {
   const { id } = useParams();
-  const navigate = useNavigate();
+  const loaderData = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
+  const submit = useSubmit();
+  const navigation = useNavigation();
   const { state, dispatch } = useEditRecipeState();
   const { baseRecipe, draft, loadError, saveError, submitting } = state;
 
@@ -33,43 +98,59 @@ function RecipeEditContent() {
       });
       return;
     }
-    let cancelled = false;
     dispatch({ type: EditRecipeActionType.LOAD_RESET });
-    getRecipe(id)
-      .then((data) => {
-        if (!cancelled) {
-          dispatch({ type: EditRecipeActionType.LOAD_SUCCESS, data });
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          dispatch({
-            type: EditRecipeActionType.LOAD_FAILED,
-            data:
-              err instanceof Error ? err.message : "Something went wrong",
-          });
-        }
+    if (loaderData.error) {
+      dispatch({
+        type: EditRecipeActionType.LOAD_FAILED,
+        data: loaderData.error,
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [id, dispatch]);
+    } else if (
+      loaderData.recipe != null &&
+      loaderData.recipe.id === id
+    ) {
+      dispatch({
+        type: EditRecipeActionType.LOAD_SUCCESS,
+        data: loaderData.recipe,
+      });
+    }
+  }, [id, loaderData, dispatch]);
 
-  async function handleSubmit(e: FormEvent) {
+  useEffect(() => {
+    if (
+      actionData != null &&
+      typeof actionData === "object" &&
+      "ok" in actionData &&
+      actionData.ok === false
+    ) {
+      dispatch({
+        type: EditRecipeActionType.SUBMIT_ERROR,
+        data: actionData.error,
+      });
+    }
+  }, [actionData, dispatch]);
+
+  const navSubmitting =
+    id != null &&
+    navigation.state === "submitting" &&
+    navigation.location?.pathname === `/recipe/${id}/edit`;
+
+  const isPending =
+    id != null &&
+    navigation.state === "loading" &&
+    navigation.location?.pathname === `/recipe/${id}/edit` &&
+    (baseRecipe == null || baseRecipe.id !== id);
+
+  function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (baseRecipe == null || id == null || id === "") return;
     dispatch({ type: EditRecipeActionType.SUBMIT_START });
-    try {
-      await replaceRecipe(draftToRecipeForReplace(baseRecipe, draft));
-      navigate(`/recipe/${id}`);
-    } catch (err) {
-      dispatch({
-        type: EditRecipeActionType.SUBMIT_ERROR,
-        data:
-          err instanceof Error ? err.message : "Something went wrong",
-      });
-    }
+    submit(draftToRecipeForReplace(baseRecipe, draft), {
+      method: "POST",
+      encType: "application/json",
+    });
   }
+
+  const busy = submitting || navSubmitting;
 
   if (loadError != null) {
     return (
@@ -90,7 +171,7 @@ function RecipeEditContent() {
     );
   }
 
-  if (baseRecipe == null) {
+  if (baseRecipe == null || isPending) {
     return (
       <div className="mx-auto max-w-3xl">
         <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading…</p>
@@ -124,7 +205,7 @@ function RecipeEditContent() {
           onChange={(next) =>
             dispatch({ type: EditRecipeActionType.UPDATE_DRAFT, data: next })
           }
-          disabled={submitting}
+          disabled={busy}
         />
 
         {saveError ? (
@@ -139,10 +220,10 @@ function RecipeEditContent() {
         <div className="mt-8 flex flex-wrap items-center gap-3 border-t border-zinc-100 pt-6 dark:border-zinc-800">
           <button
             type="submit"
-            disabled={submitting}
+            disabled={busy}
             className="inline-flex items-center justify-center rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
           >
-            {submitting ? "Saving…" : "Save changes"}
+            {busy ? "Saving…" : "Save changes"}
           </button>
         </div>
       </form>

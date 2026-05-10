@@ -1,9 +1,8 @@
 import { ArrowLeft, Pencil } from "lucide-react";
 import { useEffect } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useLoaderData, useNavigation, useParams } from "react-router";
 
 import { RecipeViewer } from "~/components/recipe-viewer";
-import { getRecipe } from "~/lib/recipe-api";
 import {
   RecipeDetailProvider,
   useRecipeDetailState,
@@ -12,7 +11,31 @@ import { RecipeDetailActionType } from "~/state/recipe-detail/types";
 
 import type { Route } from "./+types/recipe";
 
-export function meta({}: Route.MetaArgs) {
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const { getRecipe } = await import("~/lib/recipes-http.server");
+  const { id } = params;
+  if (id == null || id === "") {
+    return { recipe: null, error: "Missing recipe id." };
+  }
+  try {
+    const recipe = await getRecipe(request, id);
+    return { recipe, error: null as string | null };
+  } catch (err) {
+    return {
+      recipe: null,
+      error:
+        err instanceof Error ? err.message : "Something went wrong",
+    };
+  }
+}
+
+export function meta({ data }: Route.MetaArgs) {
+  if (data?.recipe != null) {
+    return [
+      { title: `${data.recipe.name} · Recipe manager` },
+      { name: "description", content: data.recipe.description },
+    ];
+  }
   return [
     { title: "Recipe · Recipe manager" },
     { name: "description", content: "View recipe details" },
@@ -21,8 +44,10 @@ export function meta({}: Route.MetaArgs) {
 
 function RecipeDetailContent() {
   const { id } = useParams();
+  const loaderData = useLoaderData<typeof loader>();
   const { state, dispatch } = useRecipeDetailState();
   const { recipe, error } = state;
+  const navigation = useNavigation();
 
   useEffect(() => {
     if (id == null || id === "") {
@@ -32,27 +57,28 @@ function RecipeDetailContent() {
       });
       return;
     }
-    let cancelled = false;
     dispatch({ type: RecipeDetailActionType.LOAD_RESET });
-    getRecipe(id)
-      .then((data) => {
-        if (!cancelled) {
-          dispatch({ type: RecipeDetailActionType.LOAD_SUCCESS, data });
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          dispatch({
-            type: RecipeDetailActionType.LOAD_FAILED,
-            data:
-              err instanceof Error ? err.message : "Something went wrong",
-          });
-        }
+    if (loaderData.error) {
+      dispatch({
+        type: RecipeDetailActionType.LOAD_FAILED,
+        data: loaderData.error,
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [id, dispatch]);
+    } else if (
+      loaderData.recipe != null &&
+      loaderData.recipe.id === id
+    ) {
+      dispatch({
+        type: RecipeDetailActionType.LOAD_SUCCESS,
+        data: loaderData.recipe,
+      });
+    }
+  }, [id, loaderData, dispatch]);
+
+  const isPending =
+    id != null &&
+    navigation.state === "loading" &&
+    navigation.location?.pathname === `/recipe/${id}` &&
+    (recipe == null || recipe.id !== id);
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -84,11 +110,11 @@ function RecipeDetailContent() {
         </div>
       ) : null}
 
-      {!error && recipe === null ? (
+      {!error && (recipe === null || isPending) ? (
         <p className="mt-8 text-sm text-zinc-500 dark:text-zinc-400">Loading…</p>
       ) : null}
 
-      {!error && recipe !== null ? (
+      {!error && recipe !== null && !isPending ? (
         <div className="mt-6">
           <RecipeViewer recipe={recipe} />
         </div>

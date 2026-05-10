@@ -1,8 +1,14 @@
 import { ChefHat, Trash2 } from "lucide-react";
 import { useEffect } from "react";
-import { Link } from "react-router";
+import {
+  Link,
+  useFetcher,
+  useLoaderData,
+  useNavigation,
+  useRevalidator,
+} from "react-router";
 
-import { type Recipe, deleteRecipe, listRecipes } from "~/lib/recipe-api";
+import type { Recipe } from "~/lib/recipe-api";
 import {
   RecipesIndexProvider,
   useRecipesIndexState,
@@ -10,6 +16,43 @@ import {
 import { RecipesIndexActionType } from "~/state/recipes-index/types";
 
 import type { Route } from "./+types/_index";
+
+export async function loader({ request }: Route.LoaderArgs) {
+  const { listRecipes } = await import("~/lib/recipes-http.server");
+  try {
+    const recipes = await listRecipes(request);
+    return { recipes, listError: null as string | null };
+  } catch (err) {
+    return {
+      recipes: null as Recipe[] | null,
+      listError:
+        err instanceof Error ? err.message : "Something went wrong",
+    };
+  }
+}
+
+export async function action({ request }: Route.ActionArgs) {
+  const { deleteRecipe } = await import("~/lib/recipes-http.server");
+  const formData = await request.formData();
+  const intent = formData.get("intent");
+  if (intent !== "delete") {
+    return { ok: false as const, error: "Unsupported action." };
+  }
+  const id = formData.get("id");
+  if (typeof id !== "string" || id === "") {
+    return { ok: false as const, error: "Missing recipe id." };
+  }
+  try {
+    await deleteRecipe(request, id);
+    return { ok: true as const };
+  } catch (err) {
+    return {
+      ok: false as const,
+      error:
+        err instanceof Error ? err.message : "Could not delete recipe",
+    };
+  }
+}
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -29,65 +72,53 @@ function formatDate(iso: string): string {
 }
 
 function RecipesIndexContent() {
+  const loaderData = useLoaderData<typeof loader>();
   const { state, dispatch } = useRecipesIndexState();
-  const { recipes, listError: error, deletingId, deleteError } = state;
+  const { recipes, listError, deletingId, deleteError } = state;
+  const fetcher = useFetcher<typeof action>();
+  const navigation = useNavigation();
+  const revalidator = useRevalidator();
+
+  const isLoadingList =
+    navigation.state === "loading" &&
+    navigation.location?.pathname === "/" &&
+    navigation.formMethod == null;
 
   useEffect(() => {
-    let cancelled = false;
-    listRecipes()
-      .then((data) => {
-        if (!cancelled) {
-          dispatch({ type: RecipesIndexActionType.FETCH_SUCCESS, data });
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          dispatch({
-            type: RecipesIndexActionType.FETCH_FAILED,
-            data:
-              err instanceof Error ? err.message : "Something went wrong",
-          });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [dispatch]);
-
-  async function handleDelete(recipe: Recipe) {
-    const ok = window.confirm(
-      `Delete “${recipe.name}”? This cannot be undone.`,
-    );
-    if (!ok) return;
-    dispatch({ type: RecipesIndexActionType.DELETE_STARTED, data: recipe.id });
-    try {
-      await deleteRecipe(recipe.id);
+    if (loaderData.listError != null) {
       dispatch({
-        type: RecipesIndexActionType.DELETE_SUCCEEDED,
-        data: recipe.id,
+        type: RecipesIndexActionType.FETCH_FAILED,
+        data: loaderData.listError,
       });
-    } catch (err) {
+    } else if (loaderData.recipes != null) {
       dispatch({
-        type: RecipesIndexActionType.DELETE_FAILED,
-        data:
-          err instanceof Error ? err.message : "Could not delete recipe",
+        type: RecipesIndexActionType.FETCH_SUCCESS,
+        data: loaderData.recipes,
       });
     }
-  }
+  }, [loaderData, dispatch]);
+
+  useEffect(() => {
+    if (fetcher.state !== "idle" || fetcher.data == null) return;
+    const formData = fetcher.formData as FormData | undefined;
+    const submittedId = formData?.get("id");
+    if (typeof submittedId !== "string") return;
+    if (fetcher.data.ok === true) {
+      dispatch({
+        type: RecipesIndexActionType.DELETE_SUCCEEDED,
+        data: submittedId,
+      });
+    } else {
+      dispatch({
+        type: RecipesIndexActionType.DELETE_FAILED,
+        data: fetcher.data.error,
+      });
+    }
+  }, [fetcher.state, fetcher.data, fetcher.formData, dispatch]);
 
   function retryList() {
     dispatch({ type: RecipesIndexActionType.FETCH_STARTED });
-    listRecipes()
-      .then((data) => {
-        dispatch({ type: RecipesIndexActionType.FETCH_SUCCESS, data });
-      })
-      .catch((err) => {
-        dispatch({
-          type: RecipesIndexActionType.FETCH_FAILED,
-          data:
-            err instanceof Error ? err.message : "Something went wrong",
-        });
-      });
+    void revalidator.revalidate();
   }
 
   return (
@@ -99,12 +130,12 @@ function RecipesIndexContent() {
         All recipes from your library, newest first.
       </p>
 
-      {error ? (
+      {listError ? (
         <div
           className="mt-8 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200"
           role="alert"
         >
-          <p>{error}</p>
+          <p>{listError}</p>
           <button
             type="button"
             className="mt-3 text-sm font-medium text-red-900 underline-offset-2 hover:underline dark:text-red-100"
@@ -115,11 +146,11 @@ function RecipesIndexContent() {
         </div>
       ) : null}
 
-      {!error && recipes === null ? (
+      {!listError && (recipes === null || isLoadingList) ? (
         <p className="mt-8 text-sm text-zinc-500 dark:text-zinc-400">Loading…</p>
       ) : null}
 
-      {!error && recipes !== null && recipes.length === 0 ? (
+      {!listError && recipes !== null && !isLoadingList && recipes.length === 0 ? (
         <div className="mt-8 rounded-xl border border-dashed border-zinc-300 bg-zinc-50/80 p-8 text-center dark:border-zinc-700 dark:bg-zinc-900/40">
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
             No recipes yet. Create one to get started.
@@ -133,7 +164,7 @@ function RecipesIndexContent() {
         </div>
       ) : null}
 
-      {!error && recipes !== null && recipes.length > 0 ? (
+      {!listError && recipes !== null && !isLoadingList && recipes.length > 0 ? (
         <div className="mt-8 flex flex-col gap-3">
           {deleteError ? (
             <div
@@ -197,21 +228,40 @@ function RecipesIndexContent() {
                   </div>
                 </Link>
                 <div className="flex shrink-0 flex-col border-l border-zinc-100 dark:border-zinc-800">
-                  <button
-                    type="button"
-                    className="flex flex-1 items-center justify-center px-3 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-700 disabled:pointer-events-none disabled:opacity-40 dark:hover:bg-red-950/40 dark:hover:text-red-300"
-                    aria-label={`Delete ${r.name}`}
-                    disabled={deletingId !== null}
-                    onClick={() => void handleDelete(r)}
+                  <fetcher.Form
+                    method="post"
+                    className="flex flex-1 flex-col"
+                    onSubmit={(e) => {
+                      const ok = window.confirm(
+                        `Delete “${r.name}”? This cannot be undone.`,
+                      );
+                      if (!ok) {
+                        e.preventDefault();
+                        return;
+                      }
+                      dispatch({
+                        type: RecipesIndexActionType.DELETE_STARTED,
+                        data: r.id,
+                      });
+                    }}
                   >
-                    {deletingId === r.id ? (
-                      <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                        …
-                      </span>
-                    ) : (
-                      <Trash2 className="size-4 stroke-[2]" aria-hidden />
-                    )}
-                  </button>
+                    <input type="hidden" name="intent" value="delete" />
+                    <input type="hidden" name="id" value={r.id} />
+                    <button
+                      type="submit"
+                      className="flex flex-1 items-center justify-center px-3 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-700 disabled:pointer-events-none disabled:opacity-40 dark:hover:bg-red-950/40 dark:hover:text-red-300"
+                      aria-label={`Delete ${r.name}`}
+                      disabled={deletingId !== null}
+                    >
+                      {deletingId === r.id ? (
+                        <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                          …
+                        </span>
+                      ) : (
+                        <Trash2 className="size-4 stroke-[2]" aria-hidden />
+                      )}
+                    </button>
+                  </fetcher.Form>
                 </div>
               </li>
             ))}

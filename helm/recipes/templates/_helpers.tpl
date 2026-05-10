@@ -42,9 +42,9 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
-  RECIPES_API_BASE for the web container.
+  RECIPES_API_BASE for the web container (Node server only — loaders/actions; never sent to the browser).
   With Ingress: must be set in values (API is not on this Ingress) — see web-deployment validation.
-  Without Ingress: empty → in-cluster backend URL for SSR + loader-injected client base.
+  Without Ingress: empty → in-cluster backend URL for the web pod to call the API.
 */}}
 {{- define "recipes.webRecipesApiBase" -}}
 {{- $u := .Values.web.recipesApiBase | default "" | trim -}}
