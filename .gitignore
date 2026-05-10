@@ -12,6 +12,9 @@ dist/
 *.out
 vendor/
 
+# Local Postgres data (Docker bind mount; see database/Dockerfile)
+database/data/
+
 # OS / IDE
 .DS_Store
 .idea/

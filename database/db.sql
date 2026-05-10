@@ -1,6 +1,9 @@
 -- PostgreSQL schema for recipes (normalized ingredients and steps).
 --
--- Run against a database you own, for example:
+-- Idempotent: safe to run repeatedly (e.g. on every container start) without
+-- dropping existing data. Uses CREATE IF NOT EXISTS / DROP IF EXISTS patterns.
+--
+-- Apply manually, for example:
 --   createdb recipes
 --   psql -v ON_ERROR_STOP=1 -d recipes -f database/db.sql
 --
@@ -8,7 +11,7 @@
 
 BEGIN;
 
-CREATE TABLE recipes (
+CREATE TABLE IF NOT EXISTS recipes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
@@ -19,7 +22,7 @@ CREATE TABLE recipes (
     CONSTRAINT recipes_name_nonempty CHECK (length(trim(name)) > 0)
 );
 
-CREATE TABLE ingredients (
+CREATE TABLE IF NOT EXISTS ingredients (
     id BIGSERIAL PRIMARY KEY,
     name TEXT NOT NULL,
     CONSTRAINT ingredients_name_unique UNIQUE (name),
@@ -27,7 +30,7 @@ CREATE TABLE ingredients (
 );
 
 -- Links a recipe to catalog ingredients with amount per line.
-CREATE TABLE recipes_ingredients (
+CREATE TABLE IF NOT EXISTS recipes_ingredients (
     id BIGSERIAL PRIMARY KEY,
     recipe_id UUID NOT NULL REFERENCES recipes (id) ON DELETE CASCADE,
     ingredient_id BIGINT NOT NULL REFERENCES ingredients (id) ON DELETE RESTRICT,
@@ -38,7 +41,7 @@ CREATE TABLE recipes_ingredients (
     CONSTRAINT recipes_ingredients_recipe_ingredient_unique UNIQUE (recipe_id, ingredient_id)
 );
 
-CREATE TABLE steps (
+CREATE TABLE IF NOT EXISTS steps (
     id BIGSERIAL PRIMARY KEY,
     recipe_id UUID NOT NULL REFERENCES recipes (id) ON DELETE CASCADE,
     sort_order INT NOT NULL,
@@ -48,9 +51,9 @@ CREATE TABLE steps (
     CONSTRAINT steps_recipe_order_unique UNIQUE (recipe_id, sort_order)
 );
 
-CREATE INDEX recipes_ingredients_recipe_id_idx ON recipes_ingredients (recipe_id);
-CREATE INDEX recipes_ingredients_ingredient_id_idx ON recipes_ingredients (ingredient_id);
-CREATE INDEX steps_recipe_id_idx ON steps (recipe_id);
+CREATE INDEX IF NOT EXISTS recipes_ingredients_recipe_id_idx ON recipes_ingredients (recipe_id);
+CREATE INDEX IF NOT EXISTS recipes_ingredients_ingredient_id_idx ON recipes_ingredients (ingredient_id);
+CREATE INDEX IF NOT EXISTS steps_recipe_id_idx ON steps (recipe_id);
 
 CREATE OR REPLACE FUNCTION recipes_set_updated_at()
 RETURNS TRIGGER
@@ -62,9 +65,10 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS recipes_updated_at ON recipes;
 CREATE TRIGGER recipes_updated_at
     BEFORE UPDATE ON recipes
     FOR EACH ROW
-    EXECUTE PROCEDURE recipes_set_updated_at();
+    EXECUTE FUNCTION recipes_set_updated_at();
 
 COMMIT;
