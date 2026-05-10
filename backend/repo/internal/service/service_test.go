@@ -6,16 +6,20 @@ import (
 	"testing"
 
 	types "juancavallotti.com/recipe-types"
+
+	"juancavallotti.com/recipes-repo/internal/dbops"
 )
 
 type fakeStore struct {
-	getRecipesCalls int
-	getRecipeCalls  int
-	createCalls     int
-	updateCalls     int
-	deleteCalls     int
+	getRecipesCalls   int
+	getRecipeCalls    int
+	createCalls       int
+	createWithIDCalls int
+	updateCalls       int
+	deleteCalls       int
 
-	createErr error
+	createErr         error
+	getRecipeNotFound bool
 }
 
 func (f *fakeStore) GetRecipes(ctx context.Context) ([]types.Recipe, error) {
@@ -25,6 +29,9 @@ func (f *fakeStore) GetRecipes(ctx context.Context) ([]types.Recipe, error) {
 
 func (f *fakeStore) GetRecipe(ctx context.Context, id string) (types.Recipe, error) {
 	f.getRecipeCalls++
+	if f.getRecipeNotFound {
+		return types.Recipe{}, dbops.ErrRecipeNotFound
+	}
 	return types.Recipe{ID: id, Name: "from-store"}, nil
 }
 
@@ -34,6 +41,11 @@ func (f *fakeStore) CreateRecipe(ctx context.Context, recipe types.Recipe) (stri
 		return "", f.createErr
 	}
 	return "new-recipe-id", nil
+}
+
+func (f *fakeStore) CreateRecipeWithID(ctx context.Context, recipe types.Recipe) error {
+	f.createWithIDCalls++
+	return nil
 }
 
 func (f *fakeStore) UpdateRecipe(ctx context.Context, recipe types.Recipe) error {
@@ -148,5 +160,53 @@ func TestService_CreateRecipe_StoreErrorPropagates(t *testing.T) {
 	_, err := s.CreateRecipe(context.Background(), r)
 	if !errors.Is(err, want) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+const testUUID = "550e8400-e29b-41d4-a716-446655440000"
+
+func TestService_ImportRecipe_EmptyID_Creates(t *testing.T) {
+	t.Parallel()
+	f := &fakeStore{}
+	s := &Service{store: f}
+	r := types.Recipe{Name: "n", Ingredients: []string{"i"}, Instructions: []string{"s"}}
+	if err := s.ImportRecipe(context.Background(), r); err != nil {
+		t.Fatal(err)
+	}
+	if f.createCalls != 1 || f.getRecipeCalls != 0 || f.createWithIDCalls != 0 || f.updateCalls != 0 {
+		t.Fatalf("calls create=%d get=%d withID=%d update=%d", f.createCalls, f.getRecipeCalls, f.createWithIDCalls, f.updateCalls)
+	}
+}
+
+func TestService_ImportRecipe_NewUUID_InsertsWithID(t *testing.T) {
+	t.Parallel()
+	f := &fakeStore{getRecipeNotFound: true}
+	s := &Service{store: f}
+	r := types.Recipe{
+		ID: testUUID, Name: "n", Ingredients: []string{"i"}, Instructions: []string{"s"},
+	}
+	if err := s.ImportRecipe(context.Background(), r); err != nil {
+		t.Fatal(err)
+	}
+	if f.createWithIDCalls != 1 || f.updateCalls != 0 {
+		t.Fatalf("withID=%d update=%d", f.createWithIDCalls, f.updateCalls)
+	}
+	if f.getRecipeCalls != 1 {
+		t.Fatalf("getRecipeCalls = %d", f.getRecipeCalls)
+	}
+}
+
+func TestService_ImportRecipe_ExistingUUID_Updates(t *testing.T) {
+	t.Parallel()
+	f := &fakeStore{}
+	s := &Service{store: f}
+	r := types.Recipe{
+		ID: testUUID, Name: "n", Ingredients: []string{"i"}, Instructions: []string{"s"},
+	}
+	if err := s.ImportRecipe(context.Background(), r); err != nil {
+		t.Fatal(err)
+	}
+	if f.updateCalls != 1 || f.createWithIDCalls != 0 {
+		t.Fatalf("withID=%d update=%d", f.createWithIDCalls, f.updateCalls)
 	}
 }

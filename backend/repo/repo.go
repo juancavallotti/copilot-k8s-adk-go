@@ -37,6 +37,10 @@ func (r *Repo) DeleteRecipe(ctx context.Context, id string) error {
 	return r.service.DeleteRecipe(ctx, id)
 }
 
+func (r *Repo) ImportRecipe(ctx context.Context, recipe types.Recipe) error {
+	return r.service.ImportRecipe(ctx, recipe)
+}
+
 func NewRepo() (*Repo, error) {
 	dbHost := os.Getenv("DB_HOST")
 	dbPort := os.Getenv("DB_PORT")

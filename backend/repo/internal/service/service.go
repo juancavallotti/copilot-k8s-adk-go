@@ -13,6 +13,7 @@ type recipeStore interface {
 	GetRecipes(ctx context.Context) ([]types.Recipe, error)
 	GetRecipe(ctx context.Context, id string) (types.Recipe, error)
 	CreateRecipe(ctx context.Context, recipe types.Recipe) (string, error)
+	CreateRecipeWithID(ctx context.Context, recipe types.Recipe) error
 	UpdateRecipe(ctx context.Context, recipe types.Recipe) error
 	DeleteRecipe(ctx context.Context, id string) error
 }

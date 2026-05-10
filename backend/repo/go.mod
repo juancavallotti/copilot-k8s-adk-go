@@ -8,5 +8,3 @@ require (
 	github.com/lib/pq v1.10.9
 	juancavallotti.com/recipe-types v0.0.0
 )
-
-replace juancavallotti.com/recipe-types => ../types
