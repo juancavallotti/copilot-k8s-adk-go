@@ -1,0 +1,174 @@
+version: "3"
+
+vars:
+  IMAGE_DB: recipes-db
+  IMAGE_API: recipes-api
+  IMAGE_WEB: recipes-web
+  TAG: latest
+
+tasks:
+  default:
+    desc: List available tasks
+    silent: true
+    cmds:
+      - task -l
+
+  install:
+    desc: Install web dependencies and download Go modules
+    deps: [install:web, install:backend]
+
+  install:web:
+    desc: npm ci in web/
+    dir: web
+    cmds:
+      - npm ci
+
+  install:backend:
+    desc: go mod download for the backend workspace
+    dir: backend
+    cmds:
+      - go mod download
+
+  build:images:
+    desc: Build all container images (db, API, web)
+    deps: [build:image:db, build:image:api, build:image:web]
+
+  build:image:db:
+    desc: Build the Postgres image ({{.IMAGE_DB}}:{{.TAG}})
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - docker build -t {{.IMAGE_DB}}:{{.TAG}} -f database/Dockerfile database
+
+  build:image:api:
+    desc: Build the Go API image ({{.IMAGE_API}}:{{.TAG}})
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - docker build -t {{.IMAGE_API}}:{{.TAG}} -f backend/Dockerfile backend
+
+  build:image:web:
+    desc: Build the React Router web image ({{.IMAGE_WEB}}:{{.TAG}})
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - docker build -t {{.IMAGE_WEB}}:{{.TAG}} -f web/Dockerfile web
+
+  build:web:
+    desc: Production build of the web app (output in web/build)
+    dir: web
+    cmds:
+      - npm run build
+
+  build:backend:
+    desc: Build the API binary with Go (writes backend/api/recipes-api)
+    dir: backend
+    cmds:
+      - CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o api/recipes-api ./api
+
+  test:
+    desc: Run web and backend tests
+    deps: [test:web, test:backend]
+
+  test:web:
+    desc: vitest in web/
+    dir: web
+    cmds:
+      - npm test
+
+  test:backend:
+    desc: go test for all workspace modules
+    dir: backend
+    cmds:
+      - go test ./api/... ./repo/... ./types/... ./cli/...
+
+  typecheck:web:
+    desc: Typecheck web (react-router typegen + tsc)
+    dir: web
+    cmds:
+      - npm run typecheck
+
+  dev:
+    desc: Kubernetes dev loop (build images, deploy Helm, DevSpace sync) — requires devspace + cluster
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - devspace dev
+
+  deploy:
+    desc: Build images and deploy Helm only (no DevSpace file sync)
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - devspace run-pipeline deploy
+
+  dev:api:
+    desc: Run the API locally on :4000 (expects Postgres; see task db:up)
+    dir: backend
+    interactive: true
+    cmds:
+      - go run ./api
+
+  dev:web:
+    desc: Run the Vite / React Router dev server (proxies /api → 127.0.0.1:4000)
+    dir: web
+    interactive: true
+    cmds:
+      - npm run dev
+
+  dev:local:
+    desc: API + web dev servers together (Postgres not started — use task db:up in another shell)
+    dir: "{{.ROOT_DIR}}"
+    interactive: true
+    cmds:
+      - |
+        set -e
+        trap 'kill $(jobs -p) 2>/dev/null; true' EXIT INT TERM
+        (cd backend && exec go run ./api) &
+        (cd web && exec npm run dev) &
+        wait
+
+  db:up:
+    desc: Start local Postgres in Docker (image {{.IMAGE_DB}}:{{.TAG}} — run build:image:db first if missing)
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - mkdir -p database/data
+      - docker rm -f recipes-db-local 2>/dev/null || true
+      - |
+        docker run -d --name recipes-db-local \
+          -p 5432:5432 \
+          -v "{{.ROOT_DIR}}/database/data:/var/lib/postgresql/data" \
+          {{.IMAGE_DB}}:{{.TAG}}
+
+  db:down:
+    desc: Stop and remove the local Postgres container (keeps database/data on disk)
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - docker rm -f recipes-db-local 2>/dev/null || true
+
+  clean:
+    desc: Remove build artifacts (web/build, local API binary)
+    deps: [clean:web, clean:backend]
+
+  clean:web:
+    desc: Remove web/build
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - rm -rf web/build
+
+  clean:backend:
+    desc: Remove backend/api/recipes-api if present
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - rm -f backend/api/recipes-api
+
+  clean:deps:
+    desc: Remove web/node_modules (run task install:web afterward)
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - rm -rf web/node_modules
+
+  clean:full:
+    desc: clean + clean:deps
+    deps: [clean, clean:deps]
+
+  helm:lint:
+    desc: Lint the recipes Helm chart
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - helm lint helm/recipes
