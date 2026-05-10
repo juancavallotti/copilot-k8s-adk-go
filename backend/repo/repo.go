@@ -25,7 +25,7 @@ func (r *Repo) GetRecipe(ctx context.Context, id string) (types.Recipe, error) {
 	return r.service.GetRecipe(ctx, id)
 }
 
-func (r *Repo) CreateRecipe(ctx context.Context, recipe types.Recipe) error {
+func (r *Repo) CreateRecipe(ctx context.Context, recipe types.Recipe) (string, error) {
 	return r.service.CreateRecipe(ctx, recipe)
 }
 

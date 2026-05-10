@@ -2,7 +2,6 @@ package dbops
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
@@ -18,7 +17,7 @@ func (s *Store) UpdateRecipe(ctx context.Context, recipe types.Recipe) error {
 	}
 	id := strings.TrimSpace(recipe.ID)
 	if _, err := uuid.Parse(id); err != nil {
-		return fmt.Errorf("invalid recipe id: %w", err)
+		return ErrInvalidID
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)

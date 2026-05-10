@@ -6,9 +6,9 @@ import (
 	types "juancavallotti.com/recipe-types"
 )
 
-func (s *Service) CreateRecipe(ctx context.Context, recipe types.Recipe) error {
+func (s *Service) CreateRecipe(ctx context.Context, recipe types.Recipe) (string, error) {
 	if err := ValidateRecipeForCreate(recipe); err != nil {
-		return err
+		return "", err
 	}
 	return s.store.CreateRecipe(ctx, recipe)
 }

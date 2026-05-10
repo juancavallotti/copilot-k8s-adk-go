@@ -30,7 +30,7 @@ func TestStore_nilDB_errors(t *testing.T) {
 	if _, err := s.GetRecipe(ctx, "550e8400-e29b-41d4-a716-446655440000"); !errors.Is(err, errNilDB) {
 		t.Fatalf("GetRecipe err = %v", err)
 	}
-	if err := s.CreateRecipe(ctx, types.Recipe{}); !errors.Is(err, errNilDB) {
+	if _, err := s.CreateRecipe(ctx, types.Recipe{}); !errors.Is(err, errNilDB) {
 		t.Fatalf("CreateRecipe err = %v", err)
 	}
 	if err := s.UpdateRecipe(ctx, types.Recipe{ID: "550e8400-e29b-41d4-a716-446655440000"}); !errors.Is(err, errNilDB) {

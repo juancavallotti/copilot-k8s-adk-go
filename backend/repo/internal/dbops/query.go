@@ -50,7 +50,7 @@ func (s *Store) GetRecipe(ctx context.Context, id string) (types.Recipe, error) 
 	}
 	id = strings.TrimSpace(id)
 	if _, err := uuid.Parse(id); err != nil {
-		return types.Recipe{}, fmt.Errorf("invalid recipe id: %w", err)
+		return types.Recipe{}, ErrInvalidID
 	}
 
 	var r types.Recipe

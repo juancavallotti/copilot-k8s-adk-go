@@ -28,9 +28,12 @@ func (f *fakeStore) GetRecipe(ctx context.Context, id string) (types.Recipe, err
 	return types.Recipe{ID: id, Name: "from-store"}, nil
 }
 
-func (f *fakeStore) CreateRecipe(ctx context.Context, recipe types.Recipe) error {
+func (f *fakeStore) CreateRecipe(ctx context.Context, recipe types.Recipe) (string, error) {
 	f.createCalls++
-	return f.createErr
+	if f.createErr != nil {
+		return "", f.createErr
+	}
+	return "new-recipe-id", nil
 }
 
 func (f *fakeStore) UpdateRecipe(ctx context.Context, recipe types.Recipe) error {
@@ -89,7 +92,7 @@ func TestService_CreateRecipe_ValidationShortCircuit(t *testing.T) {
 	t.Parallel()
 	f := &fakeStore{}
 	s := &Service{store: f}
-	err := s.CreateRecipe(context.Background(), types.Recipe{Name: ""})
+	_, err := s.CreateRecipe(context.Background(), types.Recipe{Name: ""})
 	if !errors.Is(err, ErrInvalidRecipe) {
 		t.Fatalf("err = %v", err)
 	}
@@ -103,7 +106,7 @@ func TestService_CreateRecipe_DelegatesToStore(t *testing.T) {
 	f := &fakeStore{}
 	s := &Service{store: f}
 	r := types.Recipe{Name: "n", Ingredients: []string{"i"}, Instructions: []string{"s"}}
-	if err := s.CreateRecipe(context.Background(), r); err != nil {
+	if _, err := s.CreateRecipe(context.Background(), r); err != nil {
 		t.Fatal(err)
 	}
 	if f.createCalls != 1 {
@@ -142,7 +145,7 @@ func TestService_CreateRecipe_StoreErrorPropagates(t *testing.T) {
 	f := &fakeStore{createErr: want}
 	s := &Service{store: f}
 	r := types.Recipe{Name: "n", Ingredients: []string{"i"}, Instructions: []string{"s"}}
-	err := s.CreateRecipe(context.Background(), r)
+	_, err := s.CreateRecipe(context.Background(), r)
 	if !errors.Is(err, want) {
 		t.Fatalf("err = %v", err)
 	}
