@@ -1,9 +1,14 @@
 import { ArrowLeft } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Link, useParams } from "react-router";
 
 import { RecipeViewer } from "~/components/recipe-viewer";
-import { type Recipe, getRecipe } from "~/lib/recipe-api";
+import { getRecipe } from "~/lib/recipe-api";
+import {
+  RecipeDetailProvider,
+  useRecipeDetailState,
+} from "~/state/recipe-detail/context";
+import { RecipeDetailActionType } from "~/state/recipe-detail/types";
 
 import type { Route } from "./+types/recipe";
 
@@ -14,33 +19,40 @@ export function meta({}: Route.MetaArgs) {
   ];
 }
 
-export default function RecipeDetail() {
+function RecipeDetailContent() {
   const { id } = useParams();
-  const [recipe, setRecipe] = useState<Recipe | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { state, dispatch } = useRecipeDetailState();
+  const { recipe, error } = state;
 
   useEffect(() => {
     if (id == null || id === "") {
-      setRecipe(null);
-      setError("Missing recipe id.");
+      dispatch({
+        type: RecipeDetailActionType.MISSING_ID,
+        data: "Missing recipe id.",
+      });
       return;
     }
     let cancelled = false;
-    setError(null);
-    setRecipe(null);
+    dispatch({ type: RecipeDetailActionType.LOAD_RESET });
     getRecipe(id)
       .then((data) => {
-        if (!cancelled) setRecipe(data);
+        if (!cancelled) {
+          dispatch({ type: RecipeDetailActionType.LOAD_SUCCESS, data });
+        }
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Something went wrong");
+          dispatch({
+            type: RecipeDetailActionType.LOAD_FAILED,
+            data:
+              err instanceof Error ? err.message : "Something went wrong",
+          });
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, dispatch]);
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -71,5 +83,13 @@ export default function RecipeDetail() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+export default function RecipeDetail() {
+  return (
+    <RecipeDetailProvider>
+      <RecipeDetailContent />
+    </RecipeDetailProvider>
   );
 }

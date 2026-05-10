@@ -1,9 +1,14 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent } from "react";
 import { useNavigate } from "react-router";
 
 import { RecipeEditor } from "~/components/recipe-editor";
 import { createRecipe } from "~/lib/recipe-api";
 import { draftToCreateBody, emptyRecipeDraft } from "~/lib/recipe-draft";
+import {
+  CreateRecipeProvider,
+  useCreateRecipeState,
+} from "~/state/create-recipe/context";
+import { CreateRecipeActionType } from "~/state/create-recipe/types";
 
 import type { Route } from "./+types/create";
 
@@ -14,23 +19,23 @@ export function meta({}: Route.MetaArgs) {
   ];
 }
 
-export default function CreateRecipe() {
+function CreateRecipeContent() {
   const navigate = useNavigate();
-  const [draft, setDraft] = useState(emptyRecipeDraft);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { state, dispatch } = useCreateRecipeState();
+  const { draft, submitting, error } = state;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    setError(null);
-    setSubmitting(true);
+    dispatch({ type: CreateRecipeActionType.SUBMIT_START });
     try {
       const created = await createRecipe(draftToCreateBody(draft));
       navigate(`/recipe/${created.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setSubmitting(false);
+      dispatch({
+        type: CreateRecipeActionType.SUBMIT_ERROR,
+        data:
+          err instanceof Error ? err.message : "Something went wrong",
+      });
     }
   }
 
@@ -45,12 +50,14 @@ export default function CreateRecipe() {
       </p>
 
       <form
-        onSubmit={handleSubmit}
+        onSubmit={(e) => void handleSubmit(e)}
         className="mt-8 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
       >
         <RecipeEditor
           value={draft}
-          onChange={setDraft}
+          onChange={(next) =>
+            dispatch({ type: CreateRecipeActionType.UPDATE_DRAFT, data: next })
+          }
           disabled={submitting}
         />
 
@@ -75,15 +82,25 @@ export default function CreateRecipe() {
             type="button"
             disabled={submitting}
             className="text-sm font-medium text-zinc-600 underline-offset-2 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-zinc-100"
-            onClick={() => {
-              setDraft(emptyRecipeDraft());
-              setError(null);
-            }}
+            onClick={() =>
+              dispatch({
+                type: CreateRecipeActionType.RESET_FORM,
+                data: emptyRecipeDraft(),
+              })
+            }
           >
             Reset form
           </button>
         </div>
       </form>
     </div>
+  );
+}
+
+export default function CreateRecipe() {
+  return (
+    <CreateRecipeProvider>
+      <CreateRecipeContent />
+    </CreateRecipeProvider>
   );
 }
