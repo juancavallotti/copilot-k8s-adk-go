@@ -61,3 +61,12 @@ export async function createRecipe(body: CreateRecipeBody): Promise<Recipe> {
   }
   return res.json() as Promise<Recipe>;
 }
+
+export async function deleteRecipe(id: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/recipes/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    throw await readJsonError(res);
+  }
+}

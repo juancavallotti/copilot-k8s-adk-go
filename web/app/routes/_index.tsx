@@ -1,8 +1,8 @@
-import { ChefHat } from "lucide-react";
+import { ChefHat, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 
-import { type Recipe, listRecipes } from "~/lib/recipe-api";
+import { type Recipe, deleteRecipe, listRecipes } from "~/lib/recipe-api";
 
 import type { Route } from "./+types/_index";
 
@@ -26,6 +26,8 @@ function formatDate(iso: string): string {
 export default function RecipesIndex() {
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,6 +45,27 @@ export default function RecipesIndex() {
       cancelled = true;
     };
   }, []);
+
+  async function handleDelete(recipe: Recipe) {
+    const ok = window.confirm(
+      `Delete “${recipe.name}”? This cannot be undone.`,
+    );
+    if (!ok) return;
+    setDeleteError(null);
+    setDeletingId(recipe.id);
+    try {
+      await deleteRecipe(recipe.id);
+      setRecipes((prev) =>
+        prev == null ? prev : prev.filter((r) => r.id !== recipe.id),
+      );
+    } catch (err) {
+      setDeleteError(
+        err instanceof Error ? err.message : "Could not delete recipe",
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -98,12 +121,31 @@ export default function RecipesIndex() {
       ) : null}
 
       {!error && recipes !== null && recipes.length > 0 ? (
-        <ul className="mt-8 flex flex-col gap-3">
+        <div className="mt-8 flex flex-col gap-3">
+          {deleteError ? (
+            <div
+              className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200"
+              role="alert"
+            >
+              <p>{deleteError}</p>
+              <button
+                type="button"
+                className="mt-2 text-sm font-medium text-red-900 underline-offset-2 hover:underline dark:text-red-100"
+                onClick={() => setDeleteError(null)}
+              >
+                Dismiss
+              </button>
+            </div>
+          ) : null}
+          <ul className="flex flex-col gap-3">
           {recipes.map((r) => (
-            <li key={r.id}>
+            <li
+              key={r.id}
+              className="flex gap-2 rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+            >
               <Link
                 to={`/recipe/${r.id}`}
-                className="flex gap-4 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm outline-none transition-colors hover:border-zinc-300 hover:bg-zinc-50/80 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-100 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/50 dark:focus-visible:ring-zinc-500 dark:focus-visible:ring-offset-zinc-950"
+                className="flex min-w-0 flex-1 gap-4 p-4 outline-none transition-colors hover:bg-zinc-50/80 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400 dark:hover:bg-zinc-800/50 dark:focus-visible:ring-zinc-500"
               >
                 <div className="size-20 shrink-0 overflow-hidden rounded-lg bg-zinc-100 dark:bg-zinc-800">
                   {r.image.trim() !== "" ? (
@@ -139,9 +181,27 @@ export default function RecipesIndex() {
                   </p>
                 </div>
               </Link>
+              <div className="flex shrink-0 flex-col border-l border-zinc-100 dark:border-zinc-800">
+                <button
+                  type="button"
+                  className="flex flex-1 items-center justify-center px-3 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-700 disabled:pointer-events-none disabled:opacity-40 dark:hover:bg-red-950/40 dark:hover:text-red-300"
+                  aria-label={`Delete ${r.name}`}
+                  disabled={deletingId !== null}
+                  onClick={() => void handleDelete(r)}
+                >
+                  {deletingId === r.id ? (
+                    <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                      …
+                    </span>
+                  ) : (
+                    <Trash2 className="size-4 stroke-[2]" aria-hidden />
+                  )}
+                </button>
+              </div>
             </li>
           ))}
-        </ul>
+          </ul>
+        </div>
       ) : null}
     </div>
   );

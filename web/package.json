@@ -9,6 +9,7 @@
     "typecheck": "react-router typegen && tsc"
   },
   "dependencies": {
+    "@eetr/react-reducer-utils": "^0.1.1",
     "@react-router/node": "7.15.0",
     "@react-router/serve": "7.15.0",
     "isbot": "^5.1.36",
@@ -25,6 +26,7 @@
     "@types/react-dom": "^19.2.3",
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
-    "vite": "^8.0.3"
+    "vite": "^8.0.3",
+    "vitest": "^4.1.5"
   }
 }
