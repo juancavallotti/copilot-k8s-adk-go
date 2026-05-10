@@ -19,10 +19,39 @@ export type CreateRecipeBody = {
   instructions: string[];
 };
 
-export function getApiBase(): string {
-  const v = import.meta.env.VITE_API_ORIGIN as string | undefined;
-  if (v != null && v !== "") return v.replace(/\/$/, "");
+function normalizeApiBase(raw: string): string {
+  return raw.replace(/\/$/, "");
+}
+
+/**
+ * Resolves the recipes HTTP API base URL for the Node server (e.g. Docker / k8s).
+ * Prefer `RECIPES_API_BASE` at runtime so the same image can target different services.
+ */
+export function resolveRecipesApiBaseFromEnv(): string {
+  const fromEnv =
+    typeof process !== "undefined" && process.env.RECIPES_API_BASE != null
+      ? process.env.RECIPES_API_BASE.trim()
+      : "";
+  if (fromEnv !== "") return normalizeApiBase(fromEnv);
+
+  const vite =
+    (import.meta.env.VITE_RECIPES_API_BASE as string | undefined)?.trim() ||
+    (import.meta.env.VITE_API_ORIGIN as string | undefined)?.trim() ||
+    "";
+  if (vite !== "") return normalizeApiBase(vite);
+
   return "/api";
+}
+
+function getRuntimeApiBaseFromGlobal(): string | undefined {
+  const g = globalThis as typeof globalThis & { __RECIPES_API_BASE__?: string };
+  const v = g.__RECIPES_API_BASE__;
+  if (typeof v === "string" && v !== "") return normalizeApiBase(v);
+  return undefined;
+}
+
+export function getApiBase(): string {
+  return getRuntimeApiBaseFromGlobal() ?? resolveRecipesApiBaseFromEnv();
 }
 
 async function readJsonError(res: Response): Promise<Error> {

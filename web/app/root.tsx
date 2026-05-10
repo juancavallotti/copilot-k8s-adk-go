@@ -5,10 +5,22 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useLoaderData,
 } from "react-router";
+
+import { resolveRecipesApiBaseFromEnv } from "~/lib/recipe-api";
 
 import type { Route } from "./+types/root";
 import "./app.css";
+
+export function loader(_args: Route.LoaderArgs) {
+  return { recipesApiBase: resolveRecipesApiBaseFromEnv() };
+}
+
+/** Keep server-resolved API base; client reload has no `process.env.RECIPES_API_BASE`. */
+export function shouldRevalidate() {
+  return false;
+}
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -42,6 +54,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  const { recipesApiBase } = useLoaderData<typeof loader>();
+  const g = globalThis as typeof globalThis & { __RECIPES_API_BASE__?: string };
+  g.__RECIPES_API_BASE__ = recipesApiBase;
   return <Outlet />;
 }
 
