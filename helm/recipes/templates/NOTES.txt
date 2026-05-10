@@ -1,0 +1,15 @@
+1. Images (build from repo root paths shown in values.yaml comments).
+
+2. Local cluster (no Ingress):
+     kubectl port-forward svc/{{ include "recipes.fullname" . }}-web {{ .Values.web.service.port }}:{{ .Values.web.service.port }}
+   Or use NodePort and open http://<node-ip>:<nodePort>.
+
+   Without Ingress, the chart sets RECIPES_API_BASE to the in-cluster backend URL so SSR works.
+   Browser calls from your machine need a reachable API URL — set web.recipesApiBase to your backend
+   NodePort / port-forward URL, e.g. http://127.0.0.1:4000 after:
+     kubectl port-forward svc/{{ include "recipes.backend.serviceName" . }} 4000:4000
+
+3. With Ingress (ingress.enabled=true):
+   This Ingress only exposes the web app (path /). The API is not on this Ingress.
+   Set web.recipesApiBase to wherever clients can reach the API (e.g. https://api.example.com).
+   Add {{ .Values.ingress.host }} to DNS or /etc/hosts pointing at your ingress controller.

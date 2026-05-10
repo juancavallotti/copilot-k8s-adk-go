@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "recipes.fullname" . }}-backend
+  labels:
+    {{- include "recipes.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  replicas: {{ .Values.backend.replicas }}
+  selector:
+    matchLabels:
+      {{- include "recipes.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        {{- include "recipes.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: backend
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z {{ include "recipes.postgres.serviceName" . }} 5432; do
+                echo "waiting for postgres"; sleep 2
+              done
+      containers:
+        - name: api
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 4000
+          env:
+            - name: API_ADDR
+              value: ":4000"
+            - name: DB_HOST
+              value: {{ include "recipes.postgres.serviceName" . | quote }}
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "recipes.fullname" . }}-postgres
+                  key: postgres-database
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "recipes.fullname" . }}-postgres
+                  key: postgres-username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "recipes.fullname" . }}-postgres
+                  key: postgres-password
+          {{- with .Values.backend.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}

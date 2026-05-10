@@ -1,0 +1,51 @@
+{{- if and .Values.ingress.enabled (eq (.Values.web.recipesApiBase | default "" | trim) "") }}
+{{- fail "recipes: when ingress.enabled is true, set web.recipesApiBase to your API's public origin; this chart does not expose the API on Ingress." }}
+{{- end }}
+{{- $apiBase := include "recipes.webRecipesApiBase" . | trim }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "recipes.fullname" . }}-web
+  labels:
+    {{- include "recipes.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  replicas: {{ .Values.web.replicas }}
+  selector:
+    matchLabels:
+      {{- include "recipes.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: web
+  template:
+    metadata:
+      labels:
+        {{- include "recipes.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: web
+    spec:
+      initContainers:
+        - name: wait-for-backend
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z {{ include "recipes.backend.serviceName" . }} 4000; do
+                echo "waiting for backend"; sleep 2
+              done
+      containers:
+        - name: web
+          image: "{{ .Values.web.image.repository }}:{{ .Values.web.image.tag }}"
+          imagePullPolicy: {{ .Values.web.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+            {{- if ne $apiBase "" }}
+            - name: RECIPES_API_BASE
+              value: {{ $apiBase | quote }}
+            {{- end }}
+          {{- with .Values.web.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}

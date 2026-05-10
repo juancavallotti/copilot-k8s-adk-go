@@ -1,0 +1,31 @@
+{{- if .Values.ingress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "recipes.fullname" . }}-web
+  labels:
+    {{- include "recipes.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+  {{- $ann := .Values.ingress.annotations }}
+  {{- if $ann }}
+  annotations:
+    {{- range $k, $v := $ann }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className | quote }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "recipes.fullname" . }}-web
+                port:
+                  number: {{ .Values.web.service.port }}
+{{- end }}

@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "recipes.fullname" . }}-web
+  labels:
+    {{- include "recipes.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  type: {{ .Values.web.service.type }}
+  ports:
+    - port: {{ .Values.web.service.port }}
+      targetPort: http
+      name: http
+      {{- if and (eq .Values.web.service.type "NodePort") .Values.web.service.nodePort }}
+      nodePort: {{ .Values.web.service.nodePort }}
+      {{- end }}
+  selector:
+    {{- include "recipes.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: web
