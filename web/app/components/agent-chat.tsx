@@ -1,9 +1,10 @@
-import { Bot, MessageCircle, Send, X } from "lucide-react";
+import { Bot, MessageCircle, RotateCcw, Send, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useRevalidator } from "react-router";
 
 const agentAppName = "recipe_copilot";
+const sessionStorageKey = "recipes-agent-session-id";
 
 type ChatMessage = {
   id: string;
@@ -36,6 +37,17 @@ type AgentEvent = {
   };
 };
 
+function initialMessages(): ChatMessage[] {
+  return [
+    {
+      id: "welcome",
+      role: "assistant",
+      content:
+        "Hi, I can help manage recipes, inspect the current recipe list, or create and update recipes.",
+    },
+  ];
+}
+
 function randomID(prefix: string): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return `${prefix}-${crypto.randomUUID()}`;
@@ -65,11 +77,16 @@ function getUserID(): string {
 }
 
 function getSessionID(): string {
-  const key = "recipes-agent-session-id";
-  const existing = window.localStorage.getItem(key);
+  const existing = window.localStorage.getItem(sessionStorageKey);
   if (existing != null && existing !== "") return existing;
   const next = randomID("session");
-  window.localStorage.setItem(key, next);
+  window.localStorage.setItem(sessionStorageKey, next);
+  return next;
+}
+
+function startNewSession(): string {
+  const next = randomID("session");
+  window.localStorage.setItem(sessionStorageKey, next);
   return next;
 }
 
@@ -311,14 +328,7 @@ function MarkdownMessage({ content }: { content: string }) {
 
 export function AgentChat() {
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      content:
-        "Hi, I can help manage recipes, inspect the current recipe list, or create and update recipes.",
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -334,6 +344,15 @@ export function AgentChat() {
     bottomRef.current?.scrollIntoView({ block: "end" });
     inputRef.current?.focus();
   }, [isOpen, messages]);
+
+  function startNewChat() {
+    if (isSending) return;
+    startNewSession();
+    setMessages(initialMessages());
+    setDraft("");
+    setError(null);
+    inputRef.current?.focus();
+  }
 
   async function sendMessage() {
     const text = draft.trim();
@@ -441,14 +460,26 @@ export function AgentChat() {
                 </p>
               </div>
             </div>
-            <button
-              type="button"
-              className="rounded-full p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-              onClick={() => setIsOpen(false)}
-              aria-label="Close recipe copilot"
-            >
-              <X className="size-4" aria-hidden />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-medium text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 disabled:pointer-events-none disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                onClick={startNewChat}
+                disabled={isSending}
+                aria-label="Start new chat"
+              >
+                <RotateCcw className="size-3.5" aria-hidden />
+                New
+              </button>
+              <button
+                type="button"
+                className="rounded-full p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                onClick={() => setIsOpen(false)}
+                aria-label="Close recipe copilot"
+              >
+                <X className="size-4" aria-hidden />
+              </button>
+            </div>
           </header>
 
           <div className="flex-1 space-y-3 overflow-y-auto bg-zinc-50/80 px-4 py-4 dark:bg-zinc-950/40">
