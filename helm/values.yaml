@@ -32,6 +32,7 @@ agent:
   replicas: 1
   model: gemini-3.1-flash-lite
   imageModel: gemini-3.1-flash-image-preview
+  imageGenerationConcurrency: 3
   # Secret containing the Gemini API key.
   # Production options:
   # - set name to reference an existing Secret; or

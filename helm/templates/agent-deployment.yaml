@@ -58,6 +58,8 @@ spec:
               value: {{ .Values.agent.model | quote }}
             - name: AGENT_IMAGE_MODEL
               value: {{ .Values.agent.imageModel | quote }}
+            - name: AGENT_IMAGE_GENERATION_CONCURRENCY
+              value: {{ .Values.agent.imageGenerationConcurrency | quote }}
             - name: GEMINI_API_KEY
               valueFrom:
                 secretKeyRef:

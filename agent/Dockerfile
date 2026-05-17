@@ -41,10 +41,13 @@ RUN go build -trimpath -ldflags="-s -w" -o /out/recipes-cli ./cli
 # ---------- runtime stage ----------
 FROM gcr.io/distroless/static-debian12:nonroot
 
+WORKDIR /app
+
 # Bind on all interfaces so the container is reachable via the k8s Service.
 ENV AGENT_ADDR=:4100 \
     AGENT_MODEL=gemini-3.1-flash-lite \
-    AGENT_IMAGE_MODEL=gemini-3.1-flash-image-preview
+    AGENT_IMAGE_MODEL=gemini-3.1-flash-image-preview \
+    AGENT_INSTRUCTION_PATH=prompts/recipe_copilot.md
 
 # DB connection used by recipes-cli when the agent invokes it.
 ENV DB_HOST=recipes-db \
@@ -55,6 +58,7 @@ EXPOSE 4100
 
 COPY --from=build /out/recipes-agent /usr/local/bin/recipes-agent
 COPY --from=build /out/recipes-cli /usr/local/bin/recipes-cli
+COPY --from=build /src/agent/prompts/ /app/prompts/
 
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/recipes-agent"]
