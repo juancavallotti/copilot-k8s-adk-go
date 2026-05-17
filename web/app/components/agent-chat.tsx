@@ -1,6 +1,7 @@
 import { Bot, MessageCircle, Send, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate, useRevalidator } from "react-router";
 
 const agentAppName = "recipe_copilot";
 
@@ -8,6 +9,19 @@ type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  uiActions?: UIAction[];
+};
+
+type UIAction =
+  | { type: "navigate_recipe"; recipeId: string }
+  | { type: "navigate_recipe_list" }
+  | { type: "refresh_current_screen" };
+
+type AppContext = {
+  screen: "recipe_list" | "specific_recipe" | "create_recipe" | "other";
+  path: string;
+  recipeId?: string;
+  highlightedText?: string;
 };
 
 type AgentEvent = {
@@ -84,9 +98,10 @@ function replaceMessageContent(
   messages: ChatMessage[],
   messageID: string,
   content: string,
+  uiActions?: UIAction[],
 ): ChatMessage[] {
   return messages.map((message) =>
-    message.id === messageID ? { ...message, content } : message,
+    message.id === messageID ? { ...message, content, uiActions } : message,
   );
 }
 
@@ -102,7 +117,7 @@ function extractText(event: AgentEvent): string {
 async function readAgentStream(
   response: Response,
   onText: (text: string) => void,
-) {
+): Promise<string> {
   if (response.body == null) {
     throw new Error("Agent response did not include a stream.");
   }
@@ -151,6 +166,110 @@ async function readAgentStream(
 
       onText(accumulatedText);
     }
+  }
+
+  return accumulatedText;
+}
+
+function parseAssistantResponse(raw: string): {
+  content: string;
+  uiActions: UIAction[];
+} {
+  const uiActions: UIAction[] = [];
+  let hasCompleteActionBlock = false;
+  const completeBlock = /<ui_actions>\s*([\s\S]*?)\s*<\/ui_actions>/gi;
+  for (const match of raw.matchAll(completeBlock)) {
+    hasCompleteActionBlock = true;
+    try {
+      uiActions.push(...normalizeUIActions(JSON.parse(match[1])));
+    } catch {
+      // Ignore malformed action directives and keep the chat output usable.
+    }
+  }
+
+  const content = raw
+    .replace(/\s*<ui_actions>[\s\S]*?(?:<\/ui_actions>|$)/gi, "")
+    .trim();
+
+  return {
+    content: content === "" && hasCompleteActionBlock ? "Done." : content,
+    uiActions,
+  };
+}
+
+function normalizeUIActions(value: unknown): UIAction[] {
+  const rawActions =
+    value != null &&
+    typeof value === "object" &&
+    "actions" in value &&
+    Array.isArray((value as { actions?: unknown }).actions)
+      ? (value as { actions: unknown[] }).actions
+      : Array.isArray(value)
+        ? value
+        : [];
+
+  return rawActions.flatMap((rawAction): UIAction[] => {
+    if (rawAction == null || typeof rawAction !== "object") return [];
+    const action = rawAction as Record<string, unknown>;
+    if (action.type === "navigate_recipe") {
+      const recipeId = action.recipeId ?? action.recipe_id;
+      return typeof recipeId === "string" && recipeId.trim() !== ""
+        ? [{ type: "navigate_recipe", recipeId: recipeId.trim() }]
+        : [];
+    }
+    if (action.type === "navigate_recipe_list") {
+      return [{ type: "navigate_recipe_list" }];
+    }
+    if (action.type === "refresh_current_screen") {
+      return [{ type: "refresh_current_screen" }];
+    }
+    return [];
+  });
+}
+
+function getHighlightedText(): string | undefined {
+  const text = window.getSelection()?.toString().replace(/\s+/g, " ").trim();
+  if (text == null || text === "") return undefined;
+  return text.slice(0, 2000);
+}
+
+function getAppContext(path: string): AppContext {
+  if (path === "/") {
+    return { screen: "recipe_list", path };
+  }
+  const recipeMatch = path.match(/^\/recipe\/([^/]+)(?:\/edit)?\/?$/);
+  if (recipeMatch != null) {
+    return {
+      screen: "specific_recipe",
+      path,
+      recipeId: decodeURIComponent(recipeMatch[1]),
+    };
+  }
+  if (path === "/create") {
+    return { screen: "create_recipe", path };
+  }
+  return { screen: "other", path };
+}
+
+function buildAgentMessage(userMessage: string, appContext: AppContext): string {
+  return JSON.stringify(
+    {
+      appContext,
+      userMessage,
+    },
+    null,
+    2,
+  );
+}
+
+function describeUIAction(action: UIAction): string {
+  switch (action.type) {
+    case "navigate_recipe":
+      return `Open recipe ${action.recipeId}`;
+    case "navigate_recipe_list":
+      return "Open recipe list";
+    case "refresh_current_screen":
+      return "Refresh current screen";
   }
 }
 
@@ -206,6 +325,9 @@ export function AgentChat() {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const baseURL = useMemo(getAgentBaseURL, []);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const revalidator = useRevalidator();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -216,6 +338,10 @@ export function AgentChat() {
   async function sendMessage() {
     const text = draft.trim();
     if (text === "" || isSending) return;
+    const appContext = {
+      ...getAppContext(location.pathname),
+      highlightedText: getHighlightedText(),
+    };
 
     const userMessage: ChatMessage = {
       id: randomID("user"),
@@ -247,7 +373,7 @@ export function AgentChat() {
           streaming: true,
           newMessage: {
             role: "user",
-            parts: [{ text }],
+            parts: [{ text: buildAgentMessage(text, appContext) }],
           },
         }),
       });
@@ -256,11 +382,35 @@ export function AgentChat() {
         throw new Error(`Agent request failed (${res.status})`);
       }
 
-      await readAgentStream(res, (chunk) => {
+      const rawResponse = await readAgentStream(res, (chunk) => {
+        const parsed = parseAssistantResponse(chunk);
         setMessages((current) =>
-          replaceMessageContent(current, assistantID, chunk),
+          replaceMessageContent(
+            current,
+            assistantID,
+            parsed.content,
+            parsed.uiActions,
+          ),
         );
       });
+      const parsed = parseAssistantResponse(rawResponse);
+      setMessages((current) =>
+        replaceMessageContent(
+          current,
+          assistantID,
+          parsed.content,
+          parsed.uiActions,
+        ),
+      );
+      for (const action of parsed.uiActions) {
+        if (action.type === "navigate_recipe") {
+          void navigate(`/recipe/${encodeURIComponent(action.recipeId)}`);
+        } else if (action.type === "navigate_recipe_list") {
+          void navigate("/");
+        } else if (action.type === "refresh_current_screen") {
+          void revalidator.revalidate();
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Agent request failed.");
       setMessages((current) =>
@@ -325,6 +475,18 @@ export function AgentChat() {
                   ) : message.role === "assistant" ? (
                     <div className="space-y-2">
                       <MarkdownMessage content={message.content} />
+                      {message.uiActions != null && message.uiActions.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5 border-t border-zinc-100 pt-2 dark:border-zinc-800">
+                          {message.uiActions.map((action, index) => (
+                            <span
+                              key={`${action.type}-${index}`}
+                              className="rounded-full bg-amber-50 px-2 py-0.5 text-[0.6875rem] font-medium text-amber-800 dark:bg-amber-950/70 dark:text-amber-200"
+                            >
+                              {describeUIAction(action)}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                   ) : (
                     <p className="whitespace-pre-wrap">{message.content}</p>
