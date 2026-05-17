@@ -34,12 +34,12 @@ COPY api/   api/
 COPY repo/  repo/
 COPY types/ types/
 
-# Static, stripped binary — works in distroless/scratch.
+# Static, stripped binary — works in lightweight shell-capable runtimes.
 ENV CGO_ENABLED=0 GOOS=linux
 RUN go build -trimpath -ldflags="-s -w" -o /out/recipes-api ./api
 
 # ---------- runtime stage ----------
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM alpine:3.20
 
 # Bind on all interfaces so the container is reachable via the k8s Service.
 ENV API_ADDR=:4000
@@ -55,5 +55,7 @@ EXPOSE 4000
 
 COPY --from=build /out/recipes-api /usr/local/bin/recipes-api
 
+RUN addgroup -S -g 65532 nonroot \
+    && adduser -S -D -H -u 65532 -G nonroot -h /app -s /bin/sh nonroot
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/recipes-api"]

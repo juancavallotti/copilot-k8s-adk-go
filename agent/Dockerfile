@@ -39,7 +39,7 @@ WORKDIR /src/backend
 RUN go build -trimpath -ldflags="-s -w" -o /out/recipes-cli ./cli
 
 # ---------- runtime stage ----------
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM alpine:3.20
 
 WORKDIR /app
 
@@ -60,5 +60,7 @@ COPY --from=build /out/recipes-agent /usr/local/bin/recipes-agent
 COPY --from=build /out/recipes-cli /usr/local/bin/recipes-cli
 COPY --from=build /src/agent/prompts/ /app/prompts/
 
+RUN addgroup -S -g 65532 nonroot \
+    && adduser -S -D -H -u 65532 -G nonroot -h /app -s /bin/sh nonroot
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/recipes-agent"]
