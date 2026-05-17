@@ -265,7 +265,7 @@ function buildAgentMessage(userMessage: string, appContext: AppContext): string 
 function describeUIAction(action: UIAction): string {
   switch (action.type) {
     case "navigate_recipe":
-      return `Open recipe ${action.recipeId}`;
+      return "Open recipe";
     case "navigate_recipe_list":
       return "Open recipe list";
     case "refresh_current_screen":

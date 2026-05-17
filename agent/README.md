@@ -45,6 +45,10 @@ The browser strips the `<ui_actions>` block from the visible chat message,
 parses the JSON, and executes the requested actions after the response stream
 finishes.
 
+Internal IDs are not user-facing. The agent can use recipe IDs in tool calls
+and in the hidden `<ui_actions>` directive, but visible chat prose should refer
+to recipes by human-readable names or conversational context.
+
 Use an empty actions array when no UI action is useful:
 
 ```text
