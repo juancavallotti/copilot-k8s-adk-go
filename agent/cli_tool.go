@@ -41,7 +41,7 @@ type callRecipesCLIResult struct {
 func newRecipesCLITool() (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "call_recipes_cli",
-		Description: "Runs the installed recipes-cli binary with explicit arguments. Use it for recipe list, export, create, patch, add-photo, import, and schema operations.",
+		Description: "Runs the installed recipes-cli binary with explicit arguments. Use it for recipe list, export, create, patch, delete, add-photo, import, and schema operations.",
 	}, callRecipesCLI)
 }
 

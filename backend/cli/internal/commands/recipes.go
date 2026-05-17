@@ -114,6 +114,10 @@ func (r Runner) cmdPatch(ctx context.Context, repo RecipeRepo, id string, path s
 	return r.writeIndentedJSON(updated)
 }
 
+func (r Runner) cmdDelete(ctx context.Context, repo RecipeRepo, id string) error {
+	return repo.DeleteRecipe(ctx, strings.TrimSpace(id))
+}
+
 func (r Runner) cmdImport(ctx context.Context, repo RecipeRepo, path string) error {
 	in, closeInput, err := r.openInput(path)
 	if err != nil {

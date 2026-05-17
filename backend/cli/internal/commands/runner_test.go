@@ -30,6 +30,9 @@ type fakeRepo struct {
 	deletedRecipeID  string
 	deletedPhotoID   string
 
+	deleteRecipeCalls int
+	deletedID         string
+
 	setFeaturedPhotoCalls int
 	featuredRecipeID      string
 	featuredPhotoID       string
@@ -84,6 +87,12 @@ func (f *fakeRepo) DeleteRecipePhoto(ctx context.Context, recipeID string, photo
 	f.deletedRecipeID = recipeID
 	f.deletedPhotoID = photoID
 	f.updatedRecipe = types.Recipe{ID: recipeID, Name: "without-photo", Photos: []types.Photo{}}
+	return nil
+}
+
+func (f *fakeRepo) DeleteRecipe(ctx context.Context, id string) error {
+	f.deleteRecipeCalls++
+	f.deletedID = id
 	return nil
 }
 
@@ -356,6 +365,28 @@ func TestRun_DeletePhotoRemovesPhotoAndPrintsUpdatedRecipe(t *testing.T) {
 	}
 	if out.ID != "recipe-1" || len(out.Photos) != 0 {
 		t.Fatalf("output recipe = %#v", out)
+	}
+}
+
+func TestRun_DeleteRemovesRecipe(t *testing.T) {
+	repo := &fakeRepo{}
+	var factoryCalls int
+	r, stdout, stderr := testRunner("", repo, &factoryCalls)
+
+	if err := r.Run(context.Background(), []string{"delete", " recipe-1 "}); err != nil {
+		t.Fatalf("Run delete: %v", err)
+	}
+	if repo.deleteRecipeCalls != 1 {
+		t.Fatalf("delete recipe calls = %d, want 1", repo.deleteRecipeCalls)
+	}
+	if repo.deletedID != "recipe-1" {
+		t.Fatalf("deleted id = %q, want recipe-1", repo.deletedID)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
 	}
 }
 
