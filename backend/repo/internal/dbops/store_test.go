@@ -39,6 +39,12 @@ func TestStore_nilDB_errors(t *testing.T) {
 	if _, err := s.AddRecipePhoto(ctx, "550e8400-e29b-41d4-a716-446655440000", types.Photo{}); !errors.Is(err, errNilDB) {
 		t.Fatalf("AddRecipePhoto err = %v", err)
 	}
+	if err := s.DeleteRecipePhoto(ctx, "550e8400-e29b-41d4-a716-446655440000", "650e8400-e29b-41d4-a716-446655440000"); !errors.Is(err, errNilDB) {
+		t.Fatalf("DeleteRecipePhoto err = %v", err)
+	}
+	if err := s.SetFeaturedRecipePhoto(ctx, "550e8400-e29b-41d4-a716-446655440000", "650e8400-e29b-41d4-a716-446655440000"); !errors.Is(err, errNilDB) {
+		t.Fatalf("SetFeaturedRecipePhoto err = %v", err)
+	}
 	if err := s.DeleteRecipe(ctx, "550e8400-e29b-41d4-a716-446655440000"); !errors.Is(err, errNilDB) {
 		t.Fatalf("DeleteRecipe err = %v", err)
 	}
@@ -200,6 +206,121 @@ func TestStore_DeleteRecipe_notFound(t *testing.T) {
 
 	if err := s.DeleteRecipe(context.Background(), rid); !errors.Is(err, ErrRecipeNotFound) {
 		t.Fatalf("err = %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStore_DeleteRecipePhoto_notFound(t *testing.T) {
+	t.Parallel()
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	s := NewStore(db)
+
+	rid := "550e8400-e29b-41d4-a716-446655440000"
+	pid := "650e8400-e29b-41d4-a716-446655440000"
+	mock.ExpectBegin()
+	mock.ExpectExec("DELETE FROM recipes_images").
+		WithArgs(rid, pid).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectRollback()
+
+	if err := s.DeleteRecipePhoto(context.Background(), rid, pid); !errors.Is(err, ErrPhotoNotFound) {
+		t.Fatalf("err = %v, want ErrPhotoNotFound", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStore_DeleteRecipePhoto_success(t *testing.T) {
+	t.Parallel()
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	s := NewStore(db)
+
+	rid := "550e8400-e29b-41d4-a716-446655440000"
+	pid := "650e8400-e29b-41d4-a716-446655440000"
+	mock.ExpectBegin()
+	mock.ExpectExec("DELETE FROM recipes_images").
+		WithArgs(rid, pid).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("DELETE FROM recipe_images").
+		WithArgs(pid).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE recipes").
+		WithArgs(rid).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	if err := s.DeleteRecipePhoto(context.Background(), rid, pid); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStore_SetFeaturedRecipePhoto_notFound(t *testing.T) {
+	t.Parallel()
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	s := NewStore(db)
+
+	rid := "550e8400-e29b-41d4-a716-446655440000"
+	pid := "650e8400-e29b-41d4-a716-446655440000"
+	mock.ExpectBegin()
+	mock.ExpectExec("UPDATE recipes_images").
+		WithArgs(rid).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE recipes_images").
+		WithArgs(rid, pid).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectRollback()
+
+	if err := s.SetFeaturedRecipePhoto(context.Background(), rid, pid); !errors.Is(err, ErrPhotoNotFound) {
+		t.Fatalf("err = %v, want ErrPhotoNotFound", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStore_SetFeaturedRecipePhoto_success(t *testing.T) {
+	t.Parallel()
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	s := NewStore(db)
+
+	rid := "550e8400-e29b-41d4-a716-446655440000"
+	pid := "650e8400-e29b-41d4-a716-446655440000"
+	mock.ExpectBegin()
+	mock.ExpectExec("UPDATE recipes_images").
+		WithArgs(rid).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE recipes_images").
+		WithArgs(rid, pid).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE recipes").
+		WithArgs(rid).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	if err := s.SetFeaturedRecipePhoto(context.Background(), rid, pid); err != nil {
+		t.Fatal(err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

@@ -38,3 +38,26 @@ func (h *Handlers) AddRecipePhoto(c *gin.Context) {
 	c.Header("Location", "/recipes/"+c.Param("id")+"/photos/"+id)
 	c.JSON(http.StatusCreated, created)
 }
+
+// DeleteRecipePhoto handles DELETE /recipes/:id/photos/:photo_id.
+func (h *Handlers) DeleteRecipePhoto(c *gin.Context) {
+	if err := h.Repo.DeleteRecipePhoto(c.Request.Context(), c.Param("id"), c.Param("photo_id")); err != nil {
+		writeRepoErr(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// SetFeaturedRecipePhoto handles PUT /recipes/:id/photos/:photo_id/featured.
+func (h *Handlers) SetFeaturedRecipePhoto(c *gin.Context) {
+	if err := h.Repo.SetFeaturedRecipePhoto(c.Request.Context(), c.Param("id"), c.Param("photo_id")); err != nil {
+		writeRepoErr(c, err)
+		return
+	}
+	out, err := h.Repo.GetRecipe(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		writeRepoErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}

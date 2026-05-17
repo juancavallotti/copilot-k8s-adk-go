@@ -42,6 +42,14 @@ func (r *Repo) AddRecipePhoto(ctx context.Context, recipeID string, photo types.
 	return r.service.AddRecipePhoto(ctx, recipeID, photo)
 }
 
+func (r *Repo) DeleteRecipePhoto(ctx context.Context, recipeID string, photoID string) error {
+	return r.service.DeleteRecipePhoto(ctx, recipeID, photoID)
+}
+
+func (r *Repo) SetFeaturedRecipePhoto(ctx context.Context, recipeID string, photoID string) error {
+	return r.service.SetFeaturedRecipePhoto(ctx, recipeID, photoID)
+}
+
 func (r *Repo) DeleteRecipe(ctx context.Context, id string) error {
 	return r.service.DeleteRecipe(ctx, id)
 }

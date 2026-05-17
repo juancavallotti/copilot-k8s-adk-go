@@ -18,6 +18,8 @@ type RecipeRepo interface {
 	CreateRecipe(ctx context.Context, recipe types.Recipe) (string, error)
 	UpdateRecipe(ctx context.Context, recipe types.Recipe) error
 	AddRecipePhoto(ctx context.Context, recipeID string, photo types.Photo) (string, error)
+	DeleteRecipePhoto(ctx context.Context, recipeID string, photoID string) error
+	SetFeaturedRecipePhoto(ctx context.Context, recipeID string, photoID string) error
 	ImportRecipe(ctx context.Context, recipe types.Recipe) error
 }
 
@@ -91,6 +93,16 @@ func (r Runner) Run(ctx context.Context, args []string) error {
 			return r.usageError("usage: recipes-cli add-photo <recipe-id> <image-path> [--featured]")
 		}
 		return r.cmdAddPhoto(ctx, repo, args[1], args[2], len(args) == 4)
+	case "delete-photo":
+		if len(args) != 3 {
+			return r.usageError("usage: recipes-cli delete-photo <recipe-id> <photo-id>")
+		}
+		return r.cmdDeletePhoto(ctx, repo, args[1], args[2])
+	case "set-featured-photo":
+		if len(args) != 3 {
+			return r.usageError("usage: recipes-cli set-featured-photo <recipe-id> <photo-id>")
+		}
+		return r.cmdSetFeaturedPhoto(ctx, repo, args[1], args[2])
 	case "import":
 		if len(args) != 2 {
 			return r.usageError("usage: recipes-cli import <path>")
@@ -113,6 +125,9 @@ Commands:
   patch <id> <path>             Read one partial recipe JSON object (use "-" for stdin); patch it.
   add-photo <id> <path> [--featured]
                                 Base64-encode an image file and attach it to a recipe.
+  delete-photo <id> <photo-id>  Remove a photo from a recipe by photo id.
+  set-featured-photo <id> <photo-id>
+                                Mark a recipe photo as featured.
   import <path>                 Read JSONL from file (use "-" for stdin); upsert each recipe.
   schema                        Print the JSON Schema for create and patch payloads.
 

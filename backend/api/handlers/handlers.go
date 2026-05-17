@@ -23,6 +23,8 @@ func (h *Handlers) Register(r gin.IRoutes) {
 	r.GET("/recipes/:id", h.GetRecipe)
 	r.POST("/recipes", h.CreateRecipe)
 	r.POST("/recipes/:id/photos", h.AddRecipePhoto)
+	r.DELETE("/recipes/:id/photos/:photo_id", h.DeleteRecipePhoto)
+	r.PUT("/recipes/:id/photos/:photo_id/featured", h.SetFeaturedRecipePhoto)
 	r.PUT("/recipes/:id", h.ReplaceRecipe)
 	r.PATCH("/recipes/:id", h.PatchRecipe)
 	r.DELETE("/recipes/:id", h.DeleteRecipe)

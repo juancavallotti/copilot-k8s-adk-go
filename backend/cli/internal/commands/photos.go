@@ -26,3 +26,27 @@ func (r Runner) cmdAddPhoto(ctx context.Context, repo RecipeRepo, recipeID strin
 	}
 	return r.writeIndentedJSON(updated)
 }
+
+func (r Runner) cmdDeletePhoto(ctx context.Context, repo RecipeRepo, recipeID string, photoID string) error {
+	recipeID = strings.TrimSpace(recipeID)
+	if err := repo.DeleteRecipePhoto(ctx, recipeID, strings.TrimSpace(photoID)); err != nil {
+		return err
+	}
+	updated, err := repo.GetRecipe(ctx, recipeID)
+	if err != nil {
+		return err
+	}
+	return r.writeIndentedJSON(updated)
+}
+
+func (r Runner) cmdSetFeaturedPhoto(ctx context.Context, repo RecipeRepo, recipeID string, photoID string) error {
+	recipeID = strings.TrimSpace(recipeID)
+	if err := repo.SetFeaturedRecipePhoto(ctx, recipeID, strings.TrimSpace(photoID)); err != nil {
+		return err
+	}
+	updated, err := repo.GetRecipe(ctx, recipeID)
+	if err != nil {
+		return err
+	}
+	return r.writeIndentedJSON(updated)
+}

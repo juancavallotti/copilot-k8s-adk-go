@@ -17,6 +17,8 @@ type fakeStore struct {
 	createWithIDCalls int
 	updateCalls       int
 	addPhotoCalls     int
+	deletePhotoCalls  int
+	setFeaturedCalls  int
 	deleteCalls       int
 
 	createErr         error
@@ -57,6 +59,16 @@ func (f *fakeStore) UpdateRecipe(ctx context.Context, recipe types.Recipe) error
 func (f *fakeStore) AddRecipePhoto(ctx context.Context, recipeID string, photo types.Photo) (string, error) {
 	f.addPhotoCalls++
 	return "photo-id", nil
+}
+
+func (f *fakeStore) DeleteRecipePhoto(ctx context.Context, recipeID string, photoID string) error {
+	f.deletePhotoCalls++
+	return nil
+}
+
+func (f *fakeStore) SetFeaturedRecipePhoto(ctx context.Context, recipeID string, photoID string) error {
+	f.setFeaturedCalls++
+	return nil
 }
 
 func (f *fakeStore) DeleteRecipe(ctx context.Context, id string) error {
@@ -183,6 +195,56 @@ func TestService_AddRecipePhoto_DelegatesToStore(t *testing.T) {
 	}
 	if f.addPhotoCalls != 1 {
 		t.Fatalf("addPhotoCalls = %d", f.addPhotoCalls)
+	}
+}
+
+func TestService_DeleteRecipePhoto_ValidationShortCircuit(t *testing.T) {
+	t.Parallel()
+	f := &fakeStore{}
+	s := &Service{store: f}
+	err := s.DeleteRecipePhoto(context.Background(), testUUID, " ")
+	if !errors.Is(err, ErrInvalidRecipeID) {
+		t.Fatalf("err = %v, want ErrInvalidRecipeID", err)
+	}
+	if f.deletePhotoCalls != 0 {
+		t.Fatalf("store should not be called")
+	}
+}
+
+func TestService_DeleteRecipePhoto_DelegatesToStore(t *testing.T) {
+	t.Parallel()
+	f := &fakeStore{}
+	s := &Service{store: f}
+	if err := s.DeleteRecipePhoto(context.Background(), testUUID, testUUID); err != nil {
+		t.Fatal(err)
+	}
+	if f.deletePhotoCalls != 1 {
+		t.Fatalf("deletePhotoCalls = %d", f.deletePhotoCalls)
+	}
+}
+
+func TestService_SetFeaturedRecipePhoto_ValidationShortCircuit(t *testing.T) {
+	t.Parallel()
+	f := &fakeStore{}
+	s := &Service{store: f}
+	err := s.SetFeaturedRecipePhoto(context.Background(), testUUID, " ")
+	if !errors.Is(err, ErrInvalidRecipeID) {
+		t.Fatalf("err = %v, want ErrInvalidRecipeID", err)
+	}
+	if f.setFeaturedCalls != 0 {
+		t.Fatalf("store should not be called")
+	}
+}
+
+func TestService_SetFeaturedRecipePhoto_DelegatesToStore(t *testing.T) {
+	t.Parallel()
+	f := &fakeStore{}
+	s := &Service{store: f}
+	if err := s.SetFeaturedRecipePhoto(context.Background(), testUUID, testUUID); err != nil {
+		t.Fatal(err)
+	}
+	if f.setFeaturedCalls != 1 {
+		t.Fatalf("setFeaturedCalls = %d", f.setFeaturedCalls)
 	}
 }
 

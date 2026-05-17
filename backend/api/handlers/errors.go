@@ -12,6 +12,8 @@ func writeRepoErr(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, repo.ErrRecipeNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	case errors.Is(err, repo.ErrPhotoNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 	case errors.Is(err, repo.ErrInvalidID),
 		errors.Is(err, repo.ErrInvalidRecipe),
 		errors.Is(err, repo.ErrInvalidRecipeID),

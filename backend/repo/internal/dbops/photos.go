@@ -48,6 +48,101 @@ func (s *Store) AddRecipePhoto(ctx context.Context, recipeID string, photo types
 	return id, nil
 }
 
+func (s *Store) DeleteRecipePhoto(ctx context.Context, recipeID string, photoID string) error {
+	if s.db == nil {
+		return errNilDB
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	recipeID = strings.TrimSpace(recipeID)
+	photoID = strings.TrimSpace(photoID)
+	if _, err := uuid.Parse(recipeID); err != nil {
+		return ErrInvalidID
+	}
+	if _, err := uuid.Parse(photoID); err != nil {
+		return ErrInvalidID
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	res, err := tx.ExecContext(ctx, `
+DELETE FROM recipes_images
+WHERE recipe_id = $1::uuid AND image_id = $2::uuid`, recipeID, photoID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrPhotoNotFound
+	}
+	if _, err := tx.ExecContext(ctx, `
+DELETE FROM recipe_images img
+WHERE img.id = $1::uuid
+  AND NOT EXISTS (SELECT 1 FROM recipes_images ri WHERE ri.image_id = img.id)`, photoID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE recipes SET updated_at = now() WHERE id = $1::uuid`, recipeID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) SetFeaturedRecipePhoto(ctx context.Context, recipeID string, photoID string) error {
+	if s.db == nil {
+		return errNilDB
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	recipeID = strings.TrimSpace(recipeID)
+	photoID = strings.TrimSpace(photoID)
+	if _, err := uuid.Parse(recipeID); err != nil {
+		return ErrInvalidID
+	}
+	if _, err := uuid.Parse(photoID); err != nil {
+		return ErrInvalidID
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `
+UPDATE recipes_images
+SET is_featured = false
+WHERE recipe_id = $1::uuid`, recipeID); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `
+UPDATE recipes_images
+SET is_featured = true
+WHERE recipe_id = $1::uuid AND image_id = $2::uuid`, recipeID, photoID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrPhotoNotFound
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE recipes SET updated_at = now() WHERE id = $1::uuid`, recipeID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (s *Store) insertPhoto(ctx context.Context, tx *sql.Tx, recipeID string, photo types.Photo) (string, error) {
 	if photo.Featured {
 		if _, err := tx.ExecContext(ctx, `UPDATE recipes_images SET is_featured = false WHERE recipe_id = $1::uuid`, recipeID); err != nil {

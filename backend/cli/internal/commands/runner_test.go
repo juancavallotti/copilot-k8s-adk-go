@@ -26,6 +26,14 @@ type fakeRepo struct {
 	addPhotoCalls int
 	addedPhoto    types.Photo
 
+	deletePhotoCalls int
+	deletedRecipeID  string
+	deletedPhotoID   string
+
+	setFeaturedPhotoCalls int
+	featuredRecipeID      string
+	featuredPhotoID       string
+
 	importedRecipes []types.Recipe
 }
 
@@ -69,6 +77,24 @@ func (f *fakeRepo) AddRecipePhoto(ctx context.Context, recipeID string, photo ty
 		f.updatedRecipe = types.Recipe{ID: recipeID, Name: "with-photo", Photos: []types.Photo{photo}}
 	}
 	return "photo-id", nil
+}
+
+func (f *fakeRepo) DeleteRecipePhoto(ctx context.Context, recipeID string, photoID string) error {
+	f.deletePhotoCalls++
+	f.deletedRecipeID = recipeID
+	f.deletedPhotoID = photoID
+	f.updatedRecipe = types.Recipe{ID: recipeID, Name: "without-photo", Photos: []types.Photo{}}
+	return nil
+}
+
+func (f *fakeRepo) SetFeaturedRecipePhoto(ctx context.Context, recipeID string, photoID string) error {
+	f.setFeaturedPhotoCalls++
+	f.featuredRecipeID = recipeID
+	f.featuredPhotoID = photoID
+	f.updatedRecipe = types.Recipe{ID: recipeID, Name: "with-featured-photo", Photos: []types.Photo{
+		{ID: photoID, ImageBase64: "aW1n", Featured: true},
+	}}
+	return nil
 }
 
 func (f *fakeRepo) ImportRecipe(ctx context.Context, recipe types.Recipe) error {
@@ -269,6 +295,52 @@ func TestRun_AddPhotoReadsFileAndPrintsUpdatedRecipe(t *testing.T) {
 		t.Fatalf("output is not recipe JSON: %v\n%s", err, stdout.String())
 	}
 	if out.ID != "recipe-1" || len(out.Photos) != 1 {
+		t.Fatalf("output recipe = %#v", out)
+	}
+}
+
+func TestRun_DeletePhotoRemovesPhotoAndPrintsUpdatedRecipe(t *testing.T) {
+	repo := &fakeRepo{}
+	var factoryCalls int
+	r, stdout, _ := testRunner("", repo, &factoryCalls)
+
+	if err := r.Run(context.Background(), []string{"delete-photo", " recipe-1 ", " photo-1 "}); err != nil {
+		t.Fatalf("Run delete-photo: %v", err)
+	}
+	if repo.deletePhotoCalls != 1 {
+		t.Fatalf("delete photo calls = %d, want 1", repo.deletePhotoCalls)
+	}
+	if repo.deletedRecipeID != "recipe-1" || repo.deletedPhotoID != "photo-1" {
+		t.Fatalf("deleted recipe/photo = %q/%q", repo.deletedRecipeID, repo.deletedPhotoID)
+	}
+	var out types.Recipe
+	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
+		t.Fatalf("output is not recipe JSON: %v\n%s", err, stdout.String())
+	}
+	if out.ID != "recipe-1" || len(out.Photos) != 0 {
+		t.Fatalf("output recipe = %#v", out)
+	}
+}
+
+func TestRun_SetFeaturedPhotoMarksPhotoAndPrintsUpdatedRecipe(t *testing.T) {
+	repo := &fakeRepo{}
+	var factoryCalls int
+	r, stdout, _ := testRunner("", repo, &factoryCalls)
+
+	if err := r.Run(context.Background(), []string{"set-featured-photo", " recipe-1 ", " photo-1 "}); err != nil {
+		t.Fatalf("Run set-featured-photo: %v", err)
+	}
+	if repo.setFeaturedPhotoCalls != 1 {
+		t.Fatalf("set featured photo calls = %d, want 1", repo.setFeaturedPhotoCalls)
+	}
+	if repo.featuredRecipeID != "recipe-1" || repo.featuredPhotoID != "photo-1" {
+		t.Fatalf("featured recipe/photo = %q/%q", repo.featuredRecipeID, repo.featuredPhotoID)
+	}
+	var out types.Recipe
+	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
+		t.Fatalf("output is not recipe JSON: %v\n%s", err, stdout.String())
+	}
+	if out.ID != "recipe-1" || len(out.Photos) != 1 || !out.Photos[0].Featured {
 		t.Fatalf("output recipe = %#v", out)
 	}
 }
