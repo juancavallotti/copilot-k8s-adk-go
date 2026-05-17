@@ -72,9 +72,11 @@ tasks:
 
   build:images:release:
     desc: Build all images with {{.VERSION}} and latest tags
-    env:
-      RELEASE_VERSION: "{{.VERSION}}"
-    deps: [build:image:db, build:image:api, build:image:agent, build:image:web]
+    cmds:
+      - RELEASE_VERSION={{.VERSION}} task build:image:db
+      - RELEASE_VERSION={{.VERSION}} task build:image:api
+      - RELEASE_VERSION={{.VERSION}} task build:image:agent
+      - RELEASE_VERSION={{.VERSION}} task build:image:web
 
   test:
     desc: Run web and backend tests
