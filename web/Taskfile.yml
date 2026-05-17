@@ -17,11 +17,11 @@ tasks:
     cmds:
       - |
         set -e
-        tags=(-t "{{.IMAGE_WEB}}:{{.TAG}}")
         if [ -n "${RELEASE_VERSION:-}" ]; then
-          tags+=(-t "{{.IMAGE_WEB}}:${RELEASE_VERSION}" -t "{{.IMAGE_WEB}}:latest")
+          docker build -t "{{.IMAGE_WEB}}:${RELEASE_VERSION}" -t "{{.IMAGE_WEB}}:latest" -f web/Dockerfile web
+        else
+          docker build -t "{{.IMAGE_WEB}}:{{.TAG}}" -f web/Dockerfile web
         fi
-        docker build "${tags[@]}" -f web/Dockerfile web
 
   test:web:
     desc: vitest in web/

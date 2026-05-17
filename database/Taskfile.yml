@@ -6,11 +6,11 @@ tasks:
     cmds:
       - |
         set -e
-        tags=(-t "{{.IMAGE_DB}}:{{.TAG}}")
         if [ -n "${RELEASE_VERSION:-}" ]; then
-          tags+=(-t "{{.IMAGE_DB}}:${RELEASE_VERSION}" -t "{{.IMAGE_DB}}:latest")
+          docker build -t "{{.IMAGE_DB}}:${RELEASE_VERSION}" -t "{{.IMAGE_DB}}:latest" -f database/Dockerfile database
+        else
+          docker build -t "{{.IMAGE_DB}}:{{.TAG}}" -f database/Dockerfile database
         fi
-        docker build "${tags[@]}" -f database/Dockerfile database
 
   db:up:
     desc: Start local Postgres in Docker (image {{.IMAGE_DB}}:{{.TAG}} — run build:image:db first if missing)

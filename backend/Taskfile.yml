@@ -17,11 +17,11 @@ tasks:
     cmds:
       - |
         set -e
-        tags=(-t "{{.IMAGE_API}}:{{.TAG}}")
         if [ -n "${RELEASE_VERSION:-}" ]; then
-          tags+=(-t "{{.IMAGE_API}}:${RELEASE_VERSION}" -t "{{.IMAGE_API}}:latest")
+          docker build -t "{{.IMAGE_API}}:${RELEASE_VERSION}" -t "{{.IMAGE_API}}:latest" -f backend/Dockerfile backend
+        else
+          docker build -t "{{.IMAGE_API}}:{{.TAG}}" -f backend/Dockerfile backend
         fi
-        docker build "${tags[@]}" -f backend/Dockerfile backend
 
   test:backend:
     desc: go test for all workspace modules

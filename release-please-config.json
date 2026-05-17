@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "2214ab5c29b1bcc18fca918a867baa94157c3a23",
+  "release-type": "go",
+  "packages": {
+    ".": {
+      "package-name": "recipes",
+      "extra-files": [
+        {
+          "type": "yaml",
+          "path": "helm/Chart.yaml",
+          "jsonpath": "$.version"
+        }
+      ]
+    }
+  }
+}

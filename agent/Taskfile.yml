@@ -17,11 +17,11 @@ tasks:
     cmds:
       - |
         set -e
-        tags=(-t "{{.IMAGE_AGENT}}:{{.TAG}}")
         if [ -n "${RELEASE_VERSION:-}" ]; then
-          tags+=(-t "{{.IMAGE_AGENT}}:${RELEASE_VERSION}" -t "{{.IMAGE_AGENT}}:latest")
+          docker build -t "{{.IMAGE_AGENT}}:${RELEASE_VERSION}" -t "{{.IMAGE_AGENT}}:latest" -f agent/Dockerfile .
+        else
+          docker build -t "{{.IMAGE_AGENT}}:{{.TAG}}" -f agent/Dockerfile .
         fi
-        docker build "${tags[@]}" -f agent/Dockerfile .
 
   test:agent:
     desc: go test for the agent module
