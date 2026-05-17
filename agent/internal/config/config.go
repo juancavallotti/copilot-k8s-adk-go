@@ -7,16 +7,16 @@ import (
 	"strconv"
 
 	"github.com/joho/godotenv"
-
-	"juancavallotti.com/recipes-agent/internal/limits"
 )
 
 const (
-	defaultAddr            = "localhost:4100"
-	defaultModel           = "gemini-3.1-flash-lite"
-	defaultImageModel      = "gemini-3.1-flash-image-preview"
-	DefaultInstructionPath = "prompts/recipe_copilot.md"
-	DefaultImageOutputDir  = "/tmp/recipe-agent-images"
+	defaultAddr                       = "localhost:4100"
+	defaultModel                      = "gemini-3.1-flash-lite"
+	defaultImageModel                 = "gemini-3.1-flash-image-preview"
+	DefaultImageGenerationConcurrency = 3
+	MaxGeneratedRecipePhotoCount      = 4
+	DefaultInstructionPath            = "prompts/recipe_copilot.md"
+	DefaultImageOutputDir             = "/tmp/recipe-agent-images"
 )
 
 type Config struct {
@@ -45,7 +45,7 @@ func Read() Config {
 		Addr:                       os.Getenv("AGENT_ADDR"),
 		Model:                      os.Getenv("AGENT_MODEL"),
 		ImageModel:                 os.Getenv("AGENT_IMAGE_MODEL"),
-		ImageGenerationConcurrency: readBoundedIntEnv("AGENT_IMAGE_GENERATION_CONCURRENCY", limits.DefaultImageGenerationConcurrency, limits.MaxGeneratedRecipePhotoCount),
+		ImageGenerationConcurrency: readBoundedIntEnv("AGENT_IMAGE_GENERATION_CONCURRENCY", DefaultImageGenerationConcurrency, MaxGeneratedRecipePhotoCount),
 		ImageOutputDir:             os.Getenv("AGENT_IMAGE_OUTPUT_DIR"),
 		InstructionPath:            os.Getenv("AGENT_INSTRUCTION_PATH"),
 		GeminiAPIKey:               os.Getenv("GEMINI_API_KEY"),

@@ -15,13 +15,12 @@ import (
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
 
+	"juancavallotti.com/recipes-agent/internal/config"
 	"juancavallotti.com/recipes-agent/internal/imagegen"
-	"juancavallotti.com/recipes-agent/internal/limits"
 )
 
 const (
 	defaultGeneratedRecipePhotoCount = 1
-	defaultImageOutputDir            = "/tmp/recipe-agent-images"
 	imageGenerationTimeout           = 45 * time.Second
 	generatedPhotoTTL                = time.Hour
 	generatedPhotoPrefix             = "recipe-photo-"
@@ -66,7 +65,7 @@ func generateRecipePhotos(ctx context.Context, generator imagegen.RecipeImageGen
 	start := time.Now()
 	result := generateRecipePhotosResult{
 		PhotosRequested: normalizedRecipePhotoCount(input.Count),
-		Capped:          input.Count > limits.MaxGeneratedRecipePhotoCount,
+		Capped:          input.Count > config.MaxGeneratedRecipePhotoCount,
 	}
 	if strings.TrimSpace(input.Name) == "" {
 		return result, fmt.Errorf("name is required")
@@ -77,7 +76,7 @@ func generateRecipePhotos(ctx context.Context, generator imagegen.RecipeImageGen
 	}
 	outputDir = strings.TrimSpace(outputDir)
 	if outputDir == "" {
-		outputDir = defaultImageOutputDir
+		outputDir = config.DefaultImageOutputDir
 	}
 	log.Printf("tool generate_recipe_photos: start requested=%d concurrency=%d output_dir=%q", result.PhotosRequested, normalizedImageGenerationConcurrency(concurrency), outputDir)
 	if err := os.MkdirAll(outputDir, 0o700); err != nil {
@@ -193,10 +192,10 @@ func cleanupGeneratedRecipePhotos(outputDir string, ttl time.Duration) {
 
 func normalizedImageGenerationConcurrency(concurrency int) int {
 	if concurrency < 1 {
-		return limits.DefaultImageGenerationConcurrency
+		return config.DefaultImageGenerationConcurrency
 	}
-	if concurrency > limits.MaxGeneratedRecipePhotoCount {
-		return limits.MaxGeneratedRecipePhotoCount
+	if concurrency > config.MaxGeneratedRecipePhotoCount {
+		return config.MaxGeneratedRecipePhotoCount
 	}
 	return concurrency
 }
@@ -205,8 +204,8 @@ func normalizedRecipePhotoCount(count int) int {
 	if count <= 0 {
 		return defaultGeneratedRecipePhotoCount
 	}
-	if count > limits.MaxGeneratedRecipePhotoCount {
-		return limits.MaxGeneratedRecipePhotoCount
+	if count > config.MaxGeneratedRecipePhotoCount {
+		return config.MaxGeneratedRecipePhotoCount
 	}
 	return count
 }
