@@ -2,9 +2,13 @@ version: v2beta1
 name: simple-task-monorepo
 
 vars:
+  DEVSPACE_ENV_FILE: agent/.env
   DOCKER_USER:
     source: env
     default: juancavallotti
+  GEMINI_API_KEY:
+    source: env
+    default: ""
 
 images:
   db:
@@ -99,9 +103,23 @@ pipelines:
   dev:
     run: |-
       build_images --all
+      if [ -z "${GEMINI_API_KEY}" ]; then
+        echo "GEMINI_API_KEY is required. Set it in agent/.env or export it before running devspace."
+        exit 1
+      fi
+      kubectl create secret generic recipes-agent \
+        --from-literal=GEMINI_API_KEY="${GEMINI_API_KEY}" \
+        --dry-run=client -o yaml | kubectl apply -f -
       create_deployments --all
       start_dev --all
   deploy:
     run: |-
       build_images --all
+      if [ -z "${GEMINI_API_KEY}" ]; then
+        echo "GEMINI_API_KEY is required. Set it in agent/.env or export it before running devspace."
+        exit 1
+      fi
+      kubectl create secret generic recipes-agent \
+        --from-literal=GEMINI_API_KEY="${GEMINI_API_KEY}" \
+        --dry-run=client -o yaml | kubectl apply -f -
       create_deployments --all

@@ -31,10 +31,16 @@ agent:
     pullPolicy: IfNotPresent
   replicas: 1
   model: gemini-3.1-flash-lite
-  # Existing secret containing the Gemini API key. Create it before installing the chart.
+  # Secret containing the Gemini API key.
+  # Production options:
+  # - set name to reference an existing Secret; or
+  # - set create=true and pass value via --set-string / a private values file.
+  # DevSpace creates the default recipes-agent Secret from agent/.env before deploying.
   geminiApiKeySecret:
+    create: false
     name: ""
     key: GEMINI_API_KEY
+    value: ""
   resources: {}
   service:
     port: 4100
