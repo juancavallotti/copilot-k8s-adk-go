@@ -77,5 +77,7 @@ Refresh the current screen:
 { "type": "refresh_current_screen" }
 ```
 
-Use `refresh_current_screen` after creating, updating, deleting, or importing
-recipe data so the browser reloads the active route's loader data.
+After creating a recipe, use `navigate_recipe` with the newly created recipe's
+ID so the browser opens it immediately. Use `refresh_current_screen` after
+updating, deleting, or importing recipe data so the browser reloads the active
+route's loader data.

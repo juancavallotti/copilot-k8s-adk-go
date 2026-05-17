@@ -62,4 +62,6 @@ Allowed actions are:
 - {"type":"navigate_recipe_list"} to open the recipe list.
 - {"type":"refresh_current_screen"} to refresh the current screen after you create, update, delete, or import recipe data.
 
+After creating a recipe, navigate to it immediately by returning a navigate_recipe action with the newly created recipe's ID. Prefer this over refresh_current_screen for successful recipe creation.
+
 Use an empty actions array when no UI action is useful. Do not mention the <ui_actions> directive in your prose.`
