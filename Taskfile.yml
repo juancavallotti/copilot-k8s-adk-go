@@ -5,6 +5,7 @@ vars:
     sh: '[ -n "$DOCKER_USER" ] && printf %s "$DOCKER_USER" || printf %s juancavallotti'
   IMAGE_DB: "{{.DOCKER_USER}}/recipes-db"
   IMAGE_API: "{{.DOCKER_USER}}/recipes-api"
+  IMAGE_AGENT: "{{.DOCKER_USER}}/recipes-agent"
   IMAGE_WEB: "{{.DOCKER_USER}}/recipes-web"
   TAG: latest
   VERSION:
@@ -23,6 +24,10 @@ includes:
     taskfile: ./backend/Taskfile.yml
     dir: ./backend
     flatten: true
+  agent:
+    taskfile: ./agent/Taskfile.yml
+    dir: ./agent
+    flatten: true
   helm:
     taskfile: ./helm/Taskfile.yml
     dir: "{{.ROOT_DIR}}"
@@ -37,11 +42,11 @@ tasks:
 
   install:
     desc: Install web dependencies and download Go modules
-    deps: [install:web, install:backend]
+    deps: [install:web, install:backend, install:agent]
 
   build:images:
-    desc: Build all container images (db, API, web)
-    deps: [build:image:db, build:image:api, build:image:web]
+    desc: Build all container images (db, API, agent, web)
+    deps: [build:image:db, build:image:api, build:image:agent, build:image:web]
 
   push:images:
     desc: Push all images ({{.TAG}} only — use release:images for version + latest)
@@ -49,6 +54,7 @@ tasks:
     cmds:
       - docker push {{.IMAGE_DB}}:{{.TAG}}
       - docker push {{.IMAGE_API}}:{{.TAG}}
+      - docker push {{.IMAGE_AGENT}}:{{.TAG}}
       - docker push {{.IMAGE_WEB}}:{{.TAG}}
 
   release:images:
@@ -59,6 +65,8 @@ tasks:
       - docker push {{.IMAGE_DB}}:latest
       - docker push {{.IMAGE_API}}:{{.VERSION}}
       - docker push {{.IMAGE_API}}:latest
+      - docker push {{.IMAGE_AGENT}}:{{.VERSION}}
+      - docker push {{.IMAGE_AGENT}}:latest
       - docker push {{.IMAGE_WEB}}:{{.VERSION}}
       - docker push {{.IMAGE_WEB}}:latest
 
@@ -66,11 +74,11 @@ tasks:
     desc: Build all images with {{.VERSION}} and latest tags
     env:
       RELEASE_VERSION: "{{.VERSION}}"
-    deps: [build:image:db, build:image:api, build:image:web]
+    deps: [build:image:db, build:image:api, build:image:agent, build:image:web]
 
   test:
     desc: Run web and backend tests
-    deps: [test:web, test:backend]
+    deps: [test:web, test:backend, test:agent]
 
   dev:
     desc: Kubernetes dev loop (build images, deploy Helm, DevSpace sync) — requires devspace + cluster
@@ -97,8 +105,8 @@ tasks:
         wait
 
   clean:
-    desc: Remove build artifacts (web/build, local API binary)
-    deps: [clean:web, clean:backend]
+    desc: Remove build artifacts (web/build, local Go binaries)
+    deps: [clean:web, clean:backend, clean:agent]
 
   clean:full:
     desc: clean + clean:deps

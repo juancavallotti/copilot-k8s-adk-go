@@ -41,6 +41,19 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{ include "recipes.fullname" . }}-backend
 {{- end }}
 
+{{- define "recipes.agent.serviceName" -}}
+{{ include "recipes.fullname" . }}-agent
+{{- end }}
+
+{{- define "recipes.agent.geminiApiKeySecretName" -}}
+{{- $name := .Values.agent.geminiApiKeySecret.name | default "" | trim -}}
+{{- if ne $name "" -}}
+{{- $name -}}
+{{- else -}}
+{{ include "recipes.fullname" . }}-agent
+{{- end -}}
+{{- end }}
+
 {{/*
   RECIPES_API_BASE for the web container (Node server only — loaders/actions; never sent to the browser).
   Empty → in-cluster backend Service URL. Ingress only exposes the web app; the API stays internal.

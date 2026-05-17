@@ -24,6 +24,21 @@ backend:
   replicas: 1
   resources: {}
 
+agent:
+  image:
+    repository: juancavallotti/recipes-agent
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  model: gemini-3.1-flash-lite
+  # Existing secret containing the Gemini API key. Create it before installing the chart.
+  geminiApiKeySecret:
+    name: ""
+    key: GEMINI_API_KEY
+  resources: {}
+  service:
+    port: 4100
+
 web:
   image:
     repository: juancavallotti/recipes-web

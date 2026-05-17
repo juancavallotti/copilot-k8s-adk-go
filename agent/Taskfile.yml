@@ -1,0 +1,35 @@
+version: "3"
+
+tasks:
+  install:agent:
+    desc: go mod download for the agent module
+    cmds:
+      - go mod download
+
+  build:agent:
+    desc: Build the agent binary with Go (writes agent/recipes-agent)
+    cmds:
+      - CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o recipes-agent .
+
+  build:image:agent:
+    desc: Build the Go agent image ({{.IMAGE_AGENT}}:{{.TAG}}; release adds :{{.VERSION}} and :latest)
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - |
+        set -e
+        tags=(-t "{{.IMAGE_AGENT}}:{{.TAG}}")
+        if [ -n "${RELEASE_VERSION:-}" ]; then
+          tags+=(-t "{{.IMAGE_AGENT}}:${RELEASE_VERSION}" -t "{{.IMAGE_AGENT}}:latest")
+        fi
+        docker build "${tags[@]}" -f agent/Dockerfile .
+
+  test:agent:
+    desc: go test for the agent module
+    cmds:
+      - go test ./...
+
+  clean:agent:
+    desc: Remove agent/recipes-agent if present
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - rm -f agent/recipes-agent

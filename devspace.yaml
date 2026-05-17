@@ -25,6 +25,15 @@ images:
     skipPush: true
     createPullSecret: false
 
+  agent:
+    image: ${DOCKER_USER}/recipes-agent
+    tags:
+      - latest
+    context: .
+    dockerfile: ./agent/Dockerfile
+    skipPush: true
+    createPullSecret: false
+
   web:
     image: ${DOCKER_USER}/recipes-web
     tags:
@@ -55,6 +64,11 @@ deployments:
             repository: ${runtime.images.api.image}
             tag: ${runtime.images.api.tag}
             pullPolicy: IfNotPresent
+        agent:
+          image:
+            repository: ${runtime.images.agent.image}
+            tag: ${runtime.images.agent.tag}
+            pullPolicy: IfNotPresent
         web:
           image:
             repository: ${runtime.images.web.image}
@@ -70,6 +84,11 @@ dev:
       app.kubernetes.io/component: backend
     ports:
       - port: "4000:4000"
+  agent:
+    labelSelector:
+      app.kubernetes.io/component: agent
+    ports:
+      - port: "4100:4100"
   web:
     labelSelector:
       app.kubernetes.io/component: web

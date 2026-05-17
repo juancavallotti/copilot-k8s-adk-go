@@ -21,6 +21,13 @@ spec:
     - host: {{ .Values.ingress.host | quote }}
       http:
         paths:
+          - path: /agent
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "recipes.agent.serviceName" . }}
+                port:
+                  number: {{ .Values.agent.service.port }}
           - path: /
             pathType: Prefix
             backend:
