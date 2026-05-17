@@ -29,6 +29,7 @@ ORDER BY created_at DESC`)
 	defer rows.Close()
 
 	out := make([]types.Recipe, 0)
+	ids := make([]string, 0)
 	for rows.Next() {
 		var r types.Recipe
 		if err := rows.Scan(&r.ID, &r.Name, &r.Description, &r.Category, &r.Image, &r.CreatedAt, &r.UpdatedAt); err != nil {
@@ -38,8 +39,22 @@ ORDER BY created_at DESC`)
 		r.Instructions = []string{}
 		r.Photos = []types.Photo{}
 		out = append(out, r)
+		ids = append(ids, r.ID)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	photosByRecipeID, err := s.loadPhotosForRecipes(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		if photos, ok := photosByRecipeID[out[i].ID]; ok {
+			out[i].Photos = photos
+		}
+	}
+	return out, nil
 }
 
 func (s *Store) GetRecipe(ctx context.Context, id string) (types.Recipe, error) {

@@ -2,6 +2,7 @@ import { ChefHat } from "lucide-react";
 
 import type { Recipe } from "~/lib/recipe-api";
 import { getRecipeDisplayPhotos } from "~/lib/recipe-photos";
+import { RecipePhotoViewer } from "./recipe-photo-viewer";
 
 export type RecipeViewerProps = {
   recipe: Recipe;
@@ -27,11 +28,17 @@ export function RecipeViewer({ recipe }: RecipeViewerProps) {
     <article className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <div className="aspect-[21/9] max-h-72 w-full bg-zinc-100 dark:bg-zinc-800 sm:aspect-[2/1]">
         {primaryPhoto != null ? (
-          <img
-            src={primaryPhoto.src}
-            alt=""
-            className="size-full object-cover"
-          />
+          <RecipePhotoViewer
+            photos={displayPhotos}
+            ariaLabel={`Open photos for ${recipe.name}`}
+            className="block size-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400 dark:focus-visible:ring-zinc-500"
+          >
+            <img
+              src={primaryPhoto.src}
+              alt=""
+              className="size-full object-cover"
+            />
+          </RecipePhotoViewer>
         ) : (
           <div className="flex size-full items-center justify-center text-zinc-400 dark:text-zinc-500">
             <ChefHat className="size-16 stroke-[1.25]" aria-hidden />
@@ -43,11 +50,18 @@ export function RecipeViewer({ recipe }: RecipeViewerProps) {
           <ul className="flex gap-3 overflow-x-auto" aria-label="Recipe photos">
             {displayPhotos.map((photo, index) => (
               <li key={photo.key} className="relative shrink-0">
-                <img
-                  src={photo.src}
-                  alt=""
-                  className="size-20 rounded-lg object-cover ring-1 ring-zinc-200 dark:ring-zinc-700"
-                />
+                <RecipePhotoViewer
+                  photos={displayPhotos}
+                  initialIndex={index}
+                  ariaLabel={`Open photo ${index + 1} for ${recipe.name}`}
+                  className="block rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:focus-visible:ring-zinc-500"
+                >
+                  <img
+                    src={photo.src}
+                    alt=""
+                    className="size-20 rounded-lg object-cover ring-1 ring-zinc-200 dark:ring-zinc-700"
+                  />
+                </RecipePhotoViewer>
                 {index === 0 && photo.featured ? (
                   <span className="absolute bottom-1 left-1 rounded bg-zinc-950/75 px-1.5 py-0.5 text-[0.625rem] font-medium uppercase tracking-wide text-white">
                     Featured

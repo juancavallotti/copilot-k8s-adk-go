@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	types "juancavallotti.com/recipe-types"
 )
 
@@ -213,4 +214,32 @@ ORDER BY ri.is_featured DESC, ri.created_at, img.id`, recipeID)
 		photos = append(photos, photo)
 	}
 	return photos, rows.Err()
+}
+
+func (s *Store) loadPhotosForRecipes(ctx context.Context, recipeIDs []string) (map[string][]types.Photo, error) {
+	photosByRecipeID := make(map[string][]types.Photo, len(recipeIDs))
+	if len(recipeIDs) == 0 {
+		return photosByRecipeID, nil
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+SELECT ri.recipe_id::text, img.id::text, img.image_base64, ri.is_featured
+FROM recipes_images ri
+JOIN recipe_images img ON img.id = ri.image_id
+WHERE ri.recipe_id = ANY($1::uuid[])
+ORDER BY ri.recipe_id, ri.is_featured DESC, ri.created_at, img.id`, pq.Array(recipeIDs))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var recipeID string
+		var photo types.Photo
+		if err := rows.Scan(&recipeID, &photo.ID, &photo.ImageBase64, &photo.Featured); err != nil {
+			return nil, err
+		}
+		photosByRecipeID[recipeID] = append(photosByRecipeID[recipeID], photo)
+	}
+	return photosByRecipeID, rows.Err()
 }

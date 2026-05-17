@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { Link, useFetcher } from "react-router";
 
 import type { Recipe } from "~/lib/recipe-api";
-import { getRecipePrimaryPhoto } from "~/lib/recipe-photos";
+import { getRecipeDisplayPhotos } from "~/lib/recipe-photos";
+import { RecipePhotoViewer } from "./recipe-photo-viewer";
 
 type DeleteRecipeActionResult =
   | { ok: true }
@@ -80,30 +81,39 @@ export function RecipeList({
         {recipes.map((recipe) => {
           const isConfirming = confirmingId === recipe.id;
           const isDeleting = deletingId === recipe.id;
-          const primaryPhoto = getRecipePrimaryPhoto(recipe);
+          const displayPhotos = getRecipeDisplayPhotos(recipe);
+          const primaryPhoto = displayPhotos[0] ?? null;
 
           return (
             <li
               key={recipe.id}
               className="flex gap-2 rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
             >
-              <Link
-                to={`/recipe/${recipe.id}`}
-                className="flex min-w-0 flex-1 gap-4 p-4 outline-none transition-colors hover:bg-zinc-50/80 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400 dark:hover:bg-zinc-800/50 dark:focus-visible:ring-zinc-500"
-              >
-                <div className="size-20 shrink-0 overflow-hidden rounded-lg bg-zinc-100 dark:bg-zinc-800">
+              <div className="shrink-0 p-4 pr-0">
+                <div className="size-20 overflow-hidden rounded-lg bg-zinc-100 dark:bg-zinc-800">
                   {primaryPhoto != null ? (
-                    <img
-                      src={primaryPhoto.src}
-                      alt=""
-                      className="size-full object-cover"
-                    />
+                    <RecipePhotoViewer
+                      photos={displayPhotos}
+                      ariaLabel={`Open photos for ${recipe.name}`}
+                      className="block size-full overflow-hidden rounded-lg outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-zinc-400 dark:focus-visible:ring-zinc-500"
+                    >
+                      <img
+                        src={primaryPhoto.src}
+                        alt=""
+                        className="size-full object-cover"
+                      />
+                    </RecipePhotoViewer>
                   ) : (
                     <div className="flex size-full items-center justify-center text-zinc-400 dark:text-zinc-500">
                       <ChefHat className="size-8 stroke-[1.5]" aria-hidden />
                     </div>
                   )}
                 </div>
+              </div>
+              <Link
+                to={`/recipe/${recipe.id}`}
+                className="flex min-w-0 flex-1 p-4 pl-0 outline-none transition-colors hover:bg-zinc-50/80 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400 dark:hover:bg-zinc-800/50 dark:focus-visible:ring-zinc-500"
+              >
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-baseline gap-2">
                     <h3 className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">

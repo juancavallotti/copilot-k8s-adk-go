@@ -113,6 +113,44 @@ func TestStore_GetRecipes_empty(t *testing.T) {
 	}
 }
 
+func TestStore_GetRecipes_includesPhotos(t *testing.T) {
+	t.Parallel()
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	s := NewStore(db)
+
+	rid := "550e8400-e29b-41d4-a716-446655440000"
+	ts := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	recipes := sqlmock.NewRows([]string{"id", "name", "description", "category", "image", "created_at", "updated_at"}).
+		AddRow(rid, "Cake", "desc", "sweet", "", ts, ts)
+	mock.ExpectQuery("SELECT id::text").
+		WillReturnRows(recipes)
+
+	photos := sqlmock.NewRows([]string{"recipe_id", "id", "image_base64", "is_featured"}).
+		AddRow(rid, "650e8400-e29b-41d4-a716-446655440000", "aW1n", true)
+	mock.ExpectQuery("FROM recipes_images").
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(photos)
+
+	got, err := s.GetRecipes(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("len = %d", len(got))
+	}
+	if len(got[0].Photos) != 1 || !got[0].Photos[0].Featured || got[0].Photos[0].ImageBase64 != "aW1n" {
+		t.Fatalf("photos=%#v", got[0].Photos)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestStore_GetRecipe_notFound(t *testing.T) {
 	t.Parallel()
 	db, mock, err := sqlmock.New()
