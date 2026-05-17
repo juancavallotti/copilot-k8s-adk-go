@@ -17,6 +17,8 @@ func New(r *repo.Repo) *Handlers {
 
 // Register mounts recipe CRUD routes on r (typically *gin.Engine or a group).
 func (h *Handlers) Register(r gin.IRoutes) {
+	r.GET("/livez", h.Liveness)
+	r.GET("/readyz", h.Readiness)
 	r.GET("/recipes", h.ListRecipes)
 	r.GET("/recipes/:id", h.GetRecipe)
 	r.POST("/recipes", h.CreateRecipe)

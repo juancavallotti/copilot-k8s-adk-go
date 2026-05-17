@@ -15,6 +15,11 @@ import (
 
 type Repo struct {
 	service *service.Service
+	pool    *sql.DB
+}
+
+func (r *Repo) Ping(ctx context.Context) error {
+	return r.pool.PingContext(ctx)
 }
 
 func (r *Repo) GetRecipes(ctx context.Context) ([]types.Recipe, error) {
@@ -54,5 +59,5 @@ func NewRepo() (*Repo, error) {
 	}
 
 	store := dbops.NewStore(pool)
-	return &Repo{service: service.NewService(store)}, nil
+	return &Repo{service: service.NewService(store), pool: pool}, nil
 }
