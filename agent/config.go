@@ -9,13 +9,15 @@ import (
 )
 
 const (
-	defaultAddr  = "localhost:4100"
-	defaultModel = "gemini-3.1-flash-lite"
+	defaultAddr       = "localhost:4100"
+	defaultModel      = "gemini-3.1-flash-lite"
+	defaultImageModel = "gemini-3.1-flash-image-preview"
 )
 
 type config struct {
 	Addr         string
 	Model        string
+	ImageModel   string
 	GeminiAPIKey string
 }
 
@@ -34,6 +36,7 @@ func readConfig() config {
 	cfg := config{
 		Addr:         os.Getenv("AGENT_ADDR"),
 		Model:        os.Getenv("AGENT_MODEL"),
+		ImageModel:   os.Getenv("AGENT_IMAGE_MODEL"),
 		GeminiAPIKey: os.Getenv("GEMINI_API_KEY"),
 	}
 	if cfg.Addr == "" {
@@ -41,6 +44,9 @@ func readConfig() config {
 	}
 	if cfg.Model == "" {
 		cfg.Model = defaultModel
+	}
+	if cfg.ImageModel == "" {
+		cfg.ImageModel = defaultImageModel
 	}
 	return cfg
 }

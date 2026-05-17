@@ -56,6 +56,8 @@ spec:
               value: ":4100"
             - name: AGENT_MODEL
               value: {{ .Values.agent.model | quote }}
+            - name: AGENT_IMAGE_MODEL
+              value: {{ .Values.agent.imageModel | quote }}
             - name: GEMINI_API_KEY
               valueFrom:
                 secretKeyRef:

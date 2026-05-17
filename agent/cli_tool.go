@@ -46,6 +46,14 @@ func newRecipesCLITool() (tool.Tool, error) {
 }
 
 func callRecipesCLI(ctx tool.Context, input callRecipesCLIArgs) (callRecipesCLIResult, error) {
+	return runRecipesCLI(ctx, input)
+}
+
+func runRecipesCLI(ctx context.Context, input callRecipesCLIArgs) (callRecipesCLIResult, error) {
+	return runRecipesCLIWithOutputLimit(ctx, input, maxCLIOutputBytes)
+}
+
+func runRecipesCLIWithOutputLimit(ctx context.Context, input callRecipesCLIArgs, maxOutputBytes int) (callRecipesCLIResult, error) {
 	if err := validateCLIArgs(input.Args); err != nil {
 		return callRecipesCLIResult{}, err
 	}
@@ -60,6 +68,8 @@ func callRecipesCLI(ctx tool.Context, input callRecipesCLIArgs) (callRecipesCLIR
 	}
 
 	var stdout, stderr limitedBuffer
+	stdout.maxBytes = maxOutputBytes
+	stderr.maxBytes = maxCLIOutputBytes
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -112,12 +122,17 @@ func exitCode(err error) int {
 
 type limitedBuffer struct {
 	buf       bytes.Buffer
+	maxBytes  int
 	truncated bool
 }
 
 func (b *limitedBuffer) Write(p []byte) (int, error) {
+	maxBytes := b.maxBytes
+	if maxBytes <= 0 {
+		maxBytes = maxCLIOutputBytes
+	}
 	accepted := p
-	if remaining := maxCLIOutputBytes - b.buf.Len(); remaining <= 0 {
+	if remaining := maxBytes - b.buf.Len(); remaining <= 0 {
 		b.truncated = true
 		accepted = nil
 	} else if len(p) > remaining {

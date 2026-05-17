@@ -43,7 +43,8 @@ FROM gcr.io/distroless/static-debian12:nonroot
 
 # Bind on all interfaces so the container is reachable via the k8s Service.
 ENV AGENT_ADDR=:4100 \
-    AGENT_MODEL=gemini-3.1-flash-lite
+    AGENT_MODEL=gemini-3.1-flash-lite \
+    AGENT_IMAGE_MODEL=gemini-3.1-flash-image-preview
 
 # DB connection used by recipes-cli when the agent invokes it.
 ENV DB_HOST=recipes-db \

@@ -25,6 +25,14 @@ func newRecipeCopilot(ctx context.Context, cfg config) (agent.Agent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create recipes cli tool: %w", err)
 	}
+	imageGenerator, err := newGeminiRecipeImageGenerator(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("create recipe image generator: %w", err)
+	}
+	createTool, err := newCreateRecipeWithGeneratedPhotosTool(imageGenerator)
+	if err != nil {
+		return nil, fmt.Errorf("create recipe image tool: %w", err)
+	}
 
 	a, err := llmagent.New(llmagent.Config{
 		Name:        agentName,
@@ -32,6 +40,7 @@ func newRecipeCopilot(ctx context.Context, cfg config) (agent.Agent, error) {
 		Description: "Recipe copilot that manages recipes by calling the installed recipes-cli.",
 		Instruction: recipeCopilotInstruction,
 		Tools: []adktool.Tool{
+			createTool,
 			cliTool,
 		},
 	})
@@ -43,11 +52,15 @@ func newRecipeCopilot(ctx context.Context, cfg config) (agent.Agent, error) {
 
 const recipeCopilotInstruction = `You are a copilot for the recipe application.
 
-You have access to exactly one operational tool: call_recipes_cli. It runs the installed recipes-cli binary in this container. Use that tool for recipe listing, inspection, creation, patching, importing, exporting, and schema discovery.
+You have access to two operational tools:
+- create_recipe_with_generated_photos creates a new recipe. It attempts to generate two dish photos from different angles or presentations, stores successful photos in the recipe photos array, and then runs recipes-cli create.
+- call_recipes_cli runs the installed recipes-cli binary in this container. Use it for recipe listing, inspection, patching, importing, exporting, schema discovery, and any non-create operation.
 
 Before using recipes-cli for a user task, call call_recipes_cli with an empty args array to inspect the current help text. Use the help output and, when needed, the schema command to understand valid commands and JSON payloads. Do not guess unsupported CLI flags or commands.
 
 When a command needs JSON input, prefer passing "-" as the CLI path and provide the JSON through the tool's stdin field. Keep JSON minimal and aligned with recipes-cli schema output. Report command failures clearly, including stderr when it helps the user recover.
+
+When creating a recipe, use create_recipe_with_generated_photos instead of call_recipes_cli create. Do not ask the user for images first. The creation tool may create the recipe with fewer than two photos if image generation fails; explain any image generation warning briefly while still treating the recipe creation as successful when the recipe was created.
 
 Each user message is JSON with appContext and userMessage fields. appContext tells you the current UI location, and may include highlightedText from the browser selection. Use this context when deciding whether the user is referring to the recipe list, the current recipe, or selected text.
 
