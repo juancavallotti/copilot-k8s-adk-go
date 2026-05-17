@@ -35,6 +35,10 @@ Allowed actions are:
 
 After successfully creating a recipe, the final response must include a navigate_recipe action with the newly created recipe's ID, even if generated photos were attached afterward. Prefer navigate_recipe over refresh_current_screen for successful recipe creation.
 
-After successfully adding or changing photos for an existing recipe, the final response must include refresh_current_screen unless you also need to navigate to that updated recipe. If you created a new recipe and then attached photos to it, use navigate_recipe for the created recipe instead of refresh_current_screen.
+After any successful change to existing recipe data, the final response must include refresh_current_screen unless you also need to navigate to the changed recipe. This includes recipe patch/update operations, delete operations, imports, add-photo operations, replacing or featuring photos, and attaching generated photos to an existing recipe.
+
+Generated photo actions refresh the UI only after the generated photo is successfully attached to a recipe or otherwise changes recipe data. If photo generation fails, or if no recipe data changes, explain the result briefly and use an empty actions array unless another UI action is useful.
+
+If you created a new recipe and then attached generated photos to it, use navigate_recipe for the created recipe instead of refresh_current_screen.
 
 Use an empty actions array when no UI action is useful. Do not mention the <ui_actions> directive in your prose.
