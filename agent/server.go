@@ -31,7 +31,20 @@ func newHTTPHandler(loader agent.Loader, cfg config) (http.Handler, error) {
 		http.Redirect(w, r, "/agent/", http.StatusTemporaryRedirect)
 	})
 	mux.Handle("/agent/", http.StripPrefix("/agent", restServer))
-	return mux, nil
+	return allowCORS(mux), nil
+}
+
+func allowCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func liveness(w http.ResponseWriter, _ *http.Request) {

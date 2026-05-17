@@ -1,6 +1,8 @@
 import { BookOpen, ChefHat, CirclePlus } from "lucide-react";
 import { NavLink, Outlet } from "react-router";
 
+import { AgentChat } from "~/components/agent-chat";
+
 import type { Route } from "./+types/app-layout";
 
 export function meta({}: Route.MetaArgs) {
@@ -78,6 +80,7 @@ export default function AppLayout() {
           <Outlet />
         </main>
       </div>
+      <AgentChat />
     </div>
   );
 }
