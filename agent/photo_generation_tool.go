@@ -2,7 +2,11 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +19,8 @@ const (
 	defaultGeneratedRecipePhotoCount = 1
 	maxGeneratedRecipePhotoCount     = 4
 	imageGenerationTimeout           = 45 * time.Second
+	generatedPhotoTTL                = time.Hour
+	generatedPhotoPrefix             = "recipe-photo-"
 )
 
 type generateRecipePhotosArgs struct {
@@ -27,8 +33,9 @@ type generateRecipePhotosArgs struct {
 }
 
 type generatedRecipePhoto struct {
-	ImageBase64 string `json:"image_base64"`
-	Featured    bool   `json:"featured"`
+	Handle   string `json:"handle"`
+	Path     string `json:"path"`
+	Featured bool   `json:"featured"`
 }
 
 type generateRecipePhotosResult struct {
@@ -39,19 +46,19 @@ type generateRecipePhotosResult struct {
 	Capped          bool                   `json:"capped,omitempty"`
 }
 
-func newGenerateRecipePhotosTool(generator recipeImageGenerator, concurrency int) (tool.Tool, error) {
+func newGenerateRecipePhotosTool(generator recipeImageGenerator, concurrency int, outputDir string) (tool.Tool, error) {
 	concurrency = normalizedImageGenerationConcurrency(concurrency)
 	generate := func(ctx tool.Context, input generateRecipePhotosArgs) (generateRecipePhotosResult, error) {
-		return generateRecipePhotos(ctx, generator, input, concurrency)
+		return generateRecipePhotos(ctx, generator, input, concurrency, outputDir)
 	}
 	return functiontool.New(functiontool.Config{
 		Name:          "generate_recipe_photos",
-		Description:   "Generates up to four Gemini dish photos and returns raw base64 image data that can be passed to recipes-cli create or add-photo. This can take up to 45 seconds per photo.",
+		Description:   "Generates up to four Gemini dish photos, saves them to local files, and returns file paths that can be passed to recipes-cli add-photo. This can take up to 45 seconds per photo.",
 		IsLongRunning: true,
 	}, generate)
 }
 
-func generateRecipePhotos(ctx context.Context, generator recipeImageGenerator, input generateRecipePhotosArgs, concurrency int) (generateRecipePhotosResult, error) {
+func generateRecipePhotos(ctx context.Context, generator recipeImageGenerator, input generateRecipePhotosArgs, concurrency int, outputDir string) (generateRecipePhotosResult, error) {
 	result := generateRecipePhotosResult{
 		PhotosRequested: normalizedRecipePhotoCount(input.Count),
 		Capped:          input.Count > maxGeneratedRecipePhotoCount,
@@ -63,6 +70,14 @@ func generateRecipePhotos(ctx context.Context, generator recipeImageGenerator, i
 		result.ImageErrors = []string{"image generator is not configured"}
 		return result, nil
 	}
+	outputDir = strings.TrimSpace(outputDir)
+	if outputDir == "" {
+		outputDir = defaultImageOutputDir
+	}
+	if err := os.MkdirAll(outputDir, 0o700); err != nil {
+		return result, fmt.Errorf("create image output directory: %w", err)
+	}
+	cleanupGeneratedRecipePhotos(outputDir, generatedPhotoTTL)
 
 	prompts := recipeImagePrompts(input)
 	generated := generateRecipePhotosParallel(ctx, generator, prompts, normalizedImageGenerationConcurrency(concurrency))
@@ -73,9 +88,15 @@ func generateRecipePhotos(ctx context.Context, generator recipeImageGenerator, i
 			imageErrors = append(imageErrors, fmt.Sprintf("photo %d: %v", i+1, item.err))
 			continue
 		}
+		path, handle, err := writeGeneratedRecipePhoto(outputDir, item.imageData)
+		if err != nil {
+			imageErrors = append(imageErrors, fmt.Sprintf("photo %d: save generated image: %v", i+1, err))
+			continue
+		}
 		photos = append(photos, generatedRecipePhoto{
-			ImageBase64: item.imageBase64,
-			Featured:    len(photos) == 0,
+			Handle:   handle,
+			Path:     path,
+			Featured: len(photos) == 0,
 		})
 	}
 	result.Photos = photos
@@ -85,8 +106,8 @@ func generateRecipePhotos(ctx context.Context, generator recipeImageGenerator, i
 }
 
 type generatedRecipePhotoAttempt struct {
-	imageBase64 string
-	err         error
+	imageData []byte
+	err       error
 }
 
 func generateRecipePhotosParallel(ctx context.Context, generator recipeImageGenerator, prompts []string, concurrency int) []generatedRecipePhotoAttempt {
@@ -105,15 +126,56 @@ func generateRecipePhotosParallel(ctx context.Context, generator recipeImageGene
 
 			imageCtx, cancel := context.WithTimeout(ctx, imageGenerationTimeout)
 			defer cancel()
-			imageBase64, err := generator.GenerateRecipeImage(imageCtx, prompt)
+			imageData, err := generator.GenerateRecipeImage(imageCtx, prompt)
 			results[i] = generatedRecipePhotoAttempt{
-				imageBase64: imageBase64,
-				err:         err,
+				imageData: imageData,
+				err:       err,
 			}
 		}()
 	}
 	wg.Wait()
 	return results
+}
+
+func writeGeneratedRecipePhoto(outputDir string, imageData []byte) (string, string, error) {
+	if len(imageData) == 0 {
+		return "", "", fmt.Errorf("generated image was empty")
+	}
+	name, err := randomImageFilename()
+	if err != nil {
+		return "", "", err
+	}
+	path := filepath.Join(outputDir, name)
+	if err := os.WriteFile(path, imageData, 0o600); err != nil {
+		return "", "", err
+	}
+	return path, name, nil
+}
+
+func randomImageFilename() (string, error) {
+	var bytes [16]byte
+	if _, err := rand.Read(bytes[:]); err != nil {
+		return "", err
+	}
+	return generatedPhotoPrefix + hex.EncodeToString(bytes[:]) + ".png", nil
+}
+
+func cleanupGeneratedRecipePhotos(outputDir string, ttl time.Duration) {
+	entries, err := os.ReadDir(outputDir)
+	if err != nil {
+		return
+	}
+	cutoff := time.Now().Add(-ttl)
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), generatedPhotoPrefix) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil || info.ModTime().After(cutoff) {
+			continue
+		}
+		_ = os.Remove(filepath.Join(outputDir, entry.Name()))
+	}
 }
 
 func normalizedImageGenerationConcurrency(concurrency int) int {

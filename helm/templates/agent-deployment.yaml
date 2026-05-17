@@ -17,6 +17,10 @@ spec:
         {{- include "recipes.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: agent
     spec:
+      volumes:
+        - name: generated-images
+          emptyDir:
+            sizeLimit: {{ .Values.agent.imageScratch.sizeLimit | quote }}
       initContainers:
         - name: wait-for-postgres
           image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
@@ -32,6 +36,9 @@ spec:
         - name: agent
           image: "{{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}"
           imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
+          volumeMounts:
+            - name: generated-images
+              mountPath: {{ .Values.agent.imageScratch.mountPath | quote }}
           ports:
             - name: http
               containerPort: {{ .Values.agent.service.port }}
@@ -60,6 +67,8 @@ spec:
               value: {{ .Values.agent.imageModel | quote }}
             - name: AGENT_IMAGE_GENERATION_CONCURRENCY
               value: {{ .Values.agent.imageGenerationConcurrency | quote }}
+            - name: AGENT_IMAGE_OUTPUT_DIR
+              value: {{ .Values.agent.imageScratch.mountPath | quote }}
             - name: GEMINI_API_KEY
               valueFrom:
                 secretKeyRef:

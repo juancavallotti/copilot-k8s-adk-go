@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -11,7 +12,7 @@ import (
 
 type fakeRecipeImageGenerator struct {
 	mu        sync.Mutex
-	images    []string
+	images    [][]byte
 	errs      []error
 	calls     int
 	delay     time.Duration
@@ -19,7 +20,7 @@ type fakeRecipeImageGenerator struct {
 	maxActive int
 }
 
-func (f *fakeRecipeImageGenerator) GenerateRecipeImage(context.Context, string) (string, error) {
+func (f *fakeRecipeImageGenerator) GenerateRecipeImage(context.Context, string) ([]byte, error) {
 	f.mu.Lock()
 	call := f.calls
 	f.calls++
@@ -38,25 +39,26 @@ func (f *fakeRecipeImageGenerator) GenerateRecipeImage(context.Context, string) 
 	}
 
 	if call < len(f.errs) && f.errs[call] != nil {
-		return "", f.errs[call]
+		return nil, f.errs[call]
 	}
 	if call < len(f.images) {
 		return f.images[call], nil
 	}
-	return "image", nil
+	return []byte("image"), nil
 }
 
 func TestGenerateRecipePhotosContinuesAfterImageFailure(t *testing.T) {
 	generator := &fakeRecipeImageGenerator{
-		images: []string{"", "second-image"},
+		images: [][]byte{nil, []byte("second-image")},
 		errs:   []error{errors.New("blocked"), nil},
 	}
+	outputDir := t.TempDir()
 
 	result, err := generateRecipePhotos(context.Background(), generator, generateRecipePhotosArgs{
 		Name:        "Soup",
 		Ingredients: []string{"tomatoes"},
 		Count:       2,
-	}, 1)
+	}, 1, outputDir)
 	if err != nil {
 		t.Fatalf("generateRecipePhotos() error = %v", err)
 	}
@@ -67,8 +69,15 @@ func TestGenerateRecipePhotosContinuesAfterImageFailure(t *testing.T) {
 	if !result.Photos[0].Featured {
 		t.Fatal("first successful generated photo should be featured")
 	}
-	if result.Photos[0].ImageBase64 != "second-image" {
-		t.Fatalf("photo image = %q, want second-image", result.Photos[0].ImageBase64)
+	if result.Photos[0].Handle == "" || !strings.HasPrefix(result.Photos[0].Path, outputDir) {
+		t.Fatalf("photo handle/path = %q/%q, want saved file under output dir", result.Photos[0].Handle, result.Photos[0].Path)
+	}
+	data, err := os.ReadFile(result.Photos[0].Path)
+	if err != nil {
+		t.Fatalf("read saved photo: %v", err)
+	}
+	if string(data) != "second-image" {
+		t.Fatalf("photo file = %q, want second-image", data)
 	}
 	if len(result.ImageErrors) != 1 || !strings.Contains(result.ImageErrors[0], "blocked") {
 		t.Fatalf("imageErrors = %#v, want blocked error", result.ImageErrors)
@@ -77,13 +86,13 @@ func TestGenerateRecipePhotosContinuesAfterImageFailure(t *testing.T) {
 
 func TestGenerateRecipePhotosCapsAtFour(t *testing.T) {
 	generator := &fakeRecipeImageGenerator{
-		images: []string{"first-image", "second-image", "third-image", "fourth-image", "fifth-image"},
+		images: [][]byte{[]byte("first-image"), []byte("second-image"), []byte("third-image"), []byte("fourth-image"), []byte("fifth-image")},
 	}
 
 	result, err := generateRecipePhotos(context.Background(), generator, generateRecipePhotosArgs{
 		Name:  "Soup",
 		Count: 5,
-	}, 4)
+	}, 4, t.TempDir())
 	if err != nil {
 		t.Fatalf("generateRecipePhotos() error = %v", err)
 	}
@@ -100,14 +109,14 @@ func TestGenerateRecipePhotosCapsAtFour(t *testing.T) {
 
 func TestGenerateRecipePhotosLimitsConcurrency(t *testing.T) {
 	generator := &fakeRecipeImageGenerator{
-		images: []string{"first-image", "second-image", "third-image", "fourth-image"},
+		images: [][]byte{[]byte("first-image"), []byte("second-image"), []byte("third-image"), []byte("fourth-image")},
 		delay:  10 * time.Millisecond,
 	}
 
 	result, err := generateRecipePhotos(context.Background(), generator, generateRecipePhotosArgs{
 		Name:  "Soup",
 		Count: 4,
-	}, 2)
+	}, 2, t.TempDir())
 	if err != nil {
 		t.Fatalf("generateRecipePhotos() error = %v", err)
 	}

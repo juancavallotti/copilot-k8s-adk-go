@@ -15,6 +15,7 @@ const (
 	defaultImageModel                 = "gemini-3.1-flash-image-preview"
 	defaultImageGenerationConcurrency = 3
 	defaultInstructionPath            = "prompts/recipe_copilot.md"
+	defaultImageOutputDir             = "/tmp/recipe-agent-images"
 )
 
 type config struct {
@@ -22,6 +23,7 @@ type config struct {
 	Model                      string
 	ImageModel                 string
 	ImageGenerationConcurrency int
+	ImageOutputDir             string
 	InstructionPath            string
 	GeminiAPIKey               string
 }
@@ -43,6 +45,7 @@ func readConfig() config {
 		Model:                      os.Getenv("AGENT_MODEL"),
 		ImageModel:                 os.Getenv("AGENT_IMAGE_MODEL"),
 		ImageGenerationConcurrency: readBoundedIntEnv("AGENT_IMAGE_GENERATION_CONCURRENCY", defaultImageGenerationConcurrency, maxGeneratedRecipePhotoCount),
+		ImageOutputDir:             os.Getenv("AGENT_IMAGE_OUTPUT_DIR"),
 		InstructionPath:            os.Getenv("AGENT_INSTRUCTION_PATH"),
 		GeminiAPIKey:               os.Getenv("GEMINI_API_KEY"),
 	}
@@ -57,6 +60,9 @@ func readConfig() config {
 	}
 	if cfg.InstructionPath == "" {
 		cfg.InstructionPath = defaultInstructionPath
+	}
+	if cfg.ImageOutputDir == "" {
+		cfg.ImageOutputDir = defaultImageOutputDir
 	}
 	return cfg
 }

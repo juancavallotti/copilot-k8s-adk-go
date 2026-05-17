@@ -29,7 +29,7 @@ func newRecipeCopilot(ctx context.Context, cfg config) (agent.Agent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create recipe image generator: %w", err)
 	}
-	photoTool, err := newGenerateRecipePhotosTool(imageGenerator, cfg.ImageGenerationConcurrency)
+	photoTool, err := newGenerateRecipePhotosTool(imageGenerator, cfg.ImageGenerationConcurrency, cfg.ImageOutputDir)
 	if err != nil {
 		return nil, fmt.Errorf("create recipe photo tool: %w", err)
 	}

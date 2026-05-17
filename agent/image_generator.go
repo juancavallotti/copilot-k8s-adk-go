@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 
@@ -10,7 +9,7 @@ import (
 )
 
 type recipeImageGenerator interface {
-	GenerateRecipeImage(ctx context.Context, prompt string) (string, error)
+	GenerateRecipeImage(ctx context.Context, prompt string) ([]byte, error)
 }
 
 type geminiRecipeImageGenerator struct {
@@ -31,21 +30,21 @@ func newGeminiRecipeImageGenerator(ctx context.Context, cfg config) (*geminiReci
 	}, nil
 }
 
-func (g *geminiRecipeImageGenerator) GenerateRecipeImage(ctx context.Context, prompt string) (string, error) {
+func (g *geminiRecipeImageGenerator) GenerateRecipeImage(ctx context.Context, prompt string) ([]byte, error) {
 	if g == nil || g.client == nil {
-		return "", errors.New("image generator is not configured")
+		return nil, errors.New("image generator is not configured")
 	}
 	response, err := g.client.Models.GenerateContent(ctx, g.model, genai.Text(prompt), &genai.GenerateContentConfig{
 		ResponseModalities: []string{"IMAGE", "TEXT"},
 	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	data, err := firstInlineImageData(response)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return base64.StdEncoding.EncodeToString(data), nil
+	return data, nil
 }
 
 func firstInlineImageData(response *genai.GenerateContentResponse) ([]byte, error) {
