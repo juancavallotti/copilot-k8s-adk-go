@@ -2,6 +2,12 @@ import { Bot, MessageCircle, RotateCcw, Send, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useRevalidator } from "react-router";
+import {
+  extractUIActionsFromEvent,
+  parseAssistantResponse,
+  uniqueUIActions,
+  type UIAction,
+} from "~/lib/agent-ui-actions";
 
 const agentAppName = "recipe_copilot";
 const sessionStorageKey = "recipes-agent-session-id";
@@ -12,11 +18,6 @@ type ChatMessage = {
   content: string;
   uiActions?: UIAction[];
 };
-
-type UIAction =
-  | { type: "navigate_recipe"; recipeId: string }
-  | { type: "navigate_recipe_list" }
-  | { type: "refresh_current_screen" };
 
 type AppContext = {
   screen: "recipe_list" | "specific_recipe" | "create_recipe" | "other";
@@ -33,6 +34,8 @@ type AgentEvent = {
   content?: {
     parts?: Array<{
       text?: string;
+      functionResponse?: unknown;
+      function_response?: unknown;
     }>;
   };
 };
@@ -133,8 +136,8 @@ function extractText(event: AgentEvent): string {
 
 async function readAgentStream(
   response: Response,
-  onText: (text: string) => void,
-): Promise<string> {
+  onUpdate: (text: string, uiActions: UIAction[]) => void,
+): Promise<{ text: string; uiActions: UIAction[] }> {
   if (response.body == null) {
     throw new Error("Agent response did not include a stream.");
   }
@@ -143,105 +146,72 @@ async function readAgentStream(
   const decoder = new TextDecoder();
   let buffer = "";
   let accumulatedText = "";
+  let accumulatedUIActions: UIAction[] = [];
+
+  function processRawEvent(rawEvent: string) {
+    const data = rawEvent
+      .split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trimStart())
+      .join("\n");
+    if (data === "") return;
+
+    const parsed = JSON.parse(data) as AgentEvent | { error?: string };
+    if ("error" in parsed && typeof parsed.error === "string") {
+      throw new Error(parsed.error);
+    }
+    const event = parsed as AgentEvent;
+    const eventUIActions = extractUIActionsFromEvent(event);
+    if (eventUIActions.length > 0) {
+      accumulatedUIActions = uniqueUIActions([
+        ...accumulatedUIActions,
+        ...eventUIActions,
+      ]);
+    }
+    const text = extractText(event);
+    if (text === "") {
+      if (eventUIActions.length > 0) {
+        onUpdate(accumulatedText, accumulatedUIActions);
+      }
+      return;
+    }
+
+    if (event.partial) {
+      accumulatedText = text.startsWith(accumulatedText)
+        ? text
+        : `${accumulatedText}${text}`;
+    } else if (
+      accumulatedText === "" ||
+      text.startsWith(accumulatedText)
+    ) {
+      accumulatedText = text;
+    } else if (!accumulatedText.endsWith(text)) {
+      accumulatedText = `${accumulatedText}${text}`;
+    }
+
+    onUpdate(accumulatedText, accumulatedUIActions);
+  }
 
   while (true) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) {
+      buffer += decoder.decode();
+      break;
+    }
 
     buffer += decoder.decode(value, { stream: true });
     const events = buffer.split(/\n\n/);
     buffer = events.pop() ?? "";
 
     for (const rawEvent of events) {
-      const data = rawEvent
-        .split("\n")
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trimStart())
-        .join("\n");
-      if (data === "") continue;
-
-      const parsed = JSON.parse(data) as AgentEvent | { error?: string };
-      if ("error" in parsed && typeof parsed.error === "string") {
-        throw new Error(parsed.error);
-      }
-      const event = parsed as AgentEvent;
-      const text = extractText(event);
-      if (text === "") continue;
-
-      if (event.partial) {
-        accumulatedText = text.startsWith(accumulatedText)
-          ? text
-          : `${accumulatedText}${text}`;
-      } else if (
-        accumulatedText === "" ||
-        text.startsWith(accumulatedText)
-      ) {
-        accumulatedText = text;
-      } else if (!accumulatedText.endsWith(text)) {
-        accumulatedText = `${accumulatedText}${text}`;
-      }
-
-      onText(accumulatedText);
+      processRawEvent(rawEvent);
     }
   }
-
-  return accumulatedText;
-}
-
-function parseAssistantResponse(raw: string): {
-  content: string;
-  uiActions: UIAction[];
-} {
-  const uiActions: UIAction[] = [];
-  let hasCompleteActionBlock = false;
-  const completeBlock = /<ui_actions>\s*([\s\S]*?)\s*<\/ui_actions>/gi;
-  for (const match of raw.matchAll(completeBlock)) {
-    hasCompleteActionBlock = true;
-    try {
-      uiActions.push(...normalizeUIActions(JSON.parse(match[1])));
-    } catch {
-      // Ignore malformed action directives and keep the chat output usable.
-    }
+  if (buffer.trim() !== "") {
+    processRawEvent(buffer);
   }
 
-  const content = raw
-    .replace(/\s*<ui_actions>[\s\S]*?(?:<\/ui_actions>|$)/gi, "")
-    .trim();
-
-  return {
-    content: content === "" && hasCompleteActionBlock ? "Done." : content,
-    uiActions,
-  };
-}
-
-function normalizeUIActions(value: unknown): UIAction[] {
-  const rawActions =
-    value != null &&
-    typeof value === "object" &&
-    "actions" in value &&
-    Array.isArray((value as { actions?: unknown }).actions)
-      ? (value as { actions: unknown[] }).actions
-      : Array.isArray(value)
-        ? value
-        : [];
-
-  return rawActions.flatMap((rawAction): UIAction[] => {
-    if (rawAction == null || typeof rawAction !== "object") return [];
-    const action = rawAction as Record<string, unknown>;
-    if (action.type === "navigate_recipe") {
-      const recipeId = action.recipeId ?? action.recipe_id;
-      return typeof recipeId === "string" && recipeId.trim() !== ""
-        ? [{ type: "navigate_recipe", recipeId: recipeId.trim() }]
-        : [];
-    }
-    if (action.type === "navigate_recipe_list") {
-      return [{ type: "navigate_recipe_list" }];
-    }
-    if (action.type === "refresh_current_screen") {
-      return [{ type: "refresh_current_screen" }];
-    }
-    return [];
-  });
+  return { text: accumulatedText, uiActions: accumulatedUIActions };
 }
 
 function getHighlightedText(): string | undefined {
@@ -401,27 +371,31 @@ export function AgentChat() {
         throw new Error(`Agent request failed (${res.status})`);
       }
 
-      const rawResponse = await readAgentStream(res, (chunk) => {
+      const streamResult = await readAgentStream(res, (chunk, streamUIActions) => {
         const parsed = parseAssistantResponse(chunk);
         setMessages((current) =>
           replaceMessageContent(
             current,
             assistantID,
             parsed.content,
-            parsed.uiActions,
+            uniqueUIActions([...streamUIActions, ...parsed.uiActions]),
           ),
         );
       });
-      const parsed = parseAssistantResponse(rawResponse);
+      const parsed = parseAssistantResponse(streamResult.text);
+      const uiActions = uniqueUIActions([
+        ...streamResult.uiActions,
+        ...parsed.uiActions,
+      ]);
       setMessages((current) =>
         replaceMessageContent(
           current,
           assistantID,
           parsed.content,
-          parsed.uiActions,
+          uiActions,
         ),
       );
-      for (const action of parsed.uiActions) {
+      for (const action of uiActions) {
         if (action.type === "navigate_recipe") {
           void navigate(`/recipe/${encodeURIComponent(action.recipeId)}`);
         } else if (action.type === "navigate_recipe_list") {
