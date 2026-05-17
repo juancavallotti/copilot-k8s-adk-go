@@ -1,6 +1,8 @@
 apiVersion: v2
 name: recipes
-description: Recipes monorepo — Postgres (StatefulSet), API, and web with optional NGINX Ingress.
+description: >-
+  Recipes monorepo — Postgres (StatefulSet), API, and web with optional NGINX
+  Ingress.
 type: application
-version: 0.1.4
-appVersion: "1.0.0"
+version: 0.1.5
+appVersion: 1.0.0
