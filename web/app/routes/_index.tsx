@@ -1,13 +1,7 @@
-import { ChefHat, Trash2 } from "lucide-react";
-import { useEffect } from "react";
-import {
-  Link,
-  useFetcher,
-  useLoaderData,
-  useNavigation,
-  useRevalidator,
-} from "react-router";
+import { useCallback, useEffect } from "react";
+import { Link, useLoaderData, useNavigation, useRevalidator } from "react-router";
 
+import { RecipeList } from "~/components/recipe-list";
 import type { Recipe } from "~/lib/recipe-api";
 import {
   RecipesIndexProvider,
@@ -61,21 +55,10 @@ export function meta({}: Route.MetaArgs) {
   ];
 }
 
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
 function RecipesIndexContent() {
   const loaderData = useLoaderData<typeof loader>();
   const { state, dispatch } = useRecipesIndexState();
   const { recipes, listError, deletingId, deleteError } = state;
-  const fetcher = useFetcher<typeof action>();
   const navigation = useNavigation();
   const revalidator = useRevalidator();
 
@@ -98,28 +81,42 @@ function RecipesIndexContent() {
     }
   }, [loaderData, dispatch]);
 
-  useEffect(() => {
-    if (fetcher.state !== "idle" || fetcher.data == null) return;
-    const formData = fetcher.formData as FormData | undefined;
-    const submittedId = formData?.get("id");
-    if (typeof submittedId !== "string") return;
-    if (fetcher.data.ok === true) {
-      dispatch({
-        type: RecipesIndexActionType.DELETE_SUCCEEDED,
-        data: submittedId,
-      });
-    } else {
-      dispatch({
-        type: RecipesIndexActionType.DELETE_FAILED,
-        data: fetcher.data.error,
-      });
-    }
-  }, [fetcher.state, fetcher.data, fetcher.formData, dispatch]);
-
   function retryList() {
     dispatch({ type: RecipesIndexActionType.FETCH_STARTED });
     void revalidator.revalidate();
   }
+
+  const handleDeleteStart = useCallback(
+    (id: string) =>
+      dispatch({
+        type: RecipesIndexActionType.DELETE_STARTED,
+        data: id,
+      }),
+    [dispatch],
+  );
+
+  const handleDeleteSuccess = useCallback(
+    (id: string) =>
+      dispatch({
+        type: RecipesIndexActionType.DELETE_SUCCEEDED,
+        data: id,
+      }),
+    [dispatch],
+  );
+
+  const handleDeleteFailure = useCallback(
+    (error: string) =>
+      dispatch({
+        type: RecipesIndexActionType.DELETE_FAILED,
+        data: error,
+      }),
+    [dispatch],
+  );
+
+  const handleDeleteErrorDismiss = useCallback(
+    () => dispatch({ type: RecipesIndexActionType.DELETE_DISMISS }),
+    [dispatch],
+  );
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -165,108 +162,15 @@ function RecipesIndexContent() {
       ) : null}
 
       {!listError && recipes !== null && !isLoadingList && recipes.length > 0 ? (
-        <div className="mt-8 flex flex-col gap-3">
-          {deleteError ? (
-            <div
-              className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200"
-              role="alert"
-            >
-              <p>{deleteError}</p>
-              <button
-                type="button"
-                className="mt-2 text-sm font-medium text-red-900 underline-offset-2 hover:underline dark:text-red-100"
-                onClick={() =>
-                  dispatch({ type: RecipesIndexActionType.DELETE_DISMISS })
-                }
-              >
-                Dismiss
-              </button>
-            </div>
-          ) : null}
-          <ul className="flex flex-col gap-3">
-            {recipes.map((r) => (
-              <li
-                key={r.id}
-                className="flex gap-2 rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
-              >
-                <Link
-                  to={`/recipe/${r.id}`}
-                  className="flex min-w-0 flex-1 gap-4 p-4 outline-none transition-colors hover:bg-zinc-50/80 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400 dark:hover:bg-zinc-800/50 dark:focus-visible:ring-zinc-500"
-                >
-                  <div className="size-20 shrink-0 overflow-hidden rounded-lg bg-zinc-100 dark:bg-zinc-800">
-                    {r.image.trim() !== "" ? (
-                      <img
-                        src={r.image}
-                        alt=""
-                        className="size-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex size-full items-center justify-center text-zinc-400 dark:text-zinc-500">
-                        <ChefHat className="size-8 stroke-[1.5]" aria-hidden />
-                      </div>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-baseline gap-2">
-                      <h3 className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                        {r.name}
-                      </h3>
-                      {r.category.trim() !== "" ? (
-                        <span className="shrink-0 rounded-md bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                          {r.category}
-                        </span>
-                      ) : null}
-                    </div>
-                    {r.description.trim() !== "" ? (
-                      <p className="mt-1 line-clamp-2 text-sm text-zinc-600 dark:text-zinc-400">
-                        {r.description}
-                      </p>
-                    ) : null}
-                    <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-500">
-                      Added {formatDate(r.created_at)}
-                    </p>
-                  </div>
-                </Link>
-                <div className="flex shrink-0 flex-col border-l border-zinc-100 dark:border-zinc-800">
-                  <fetcher.Form
-                    method="post"
-                    className="flex flex-1 flex-col"
-                    onSubmit={(e) => {
-                      const ok = window.confirm(
-                        `Delete “${r.name}”? This cannot be undone.`,
-                      );
-                      if (!ok) {
-                        e.preventDefault();
-                        return;
-                      }
-                      dispatch({
-                        type: RecipesIndexActionType.DELETE_STARTED,
-                        data: r.id,
-                      });
-                    }}
-                  >
-                    <input type="hidden" name="intent" value="delete" />
-                    <input type="hidden" name="id" value={r.id} />
-                    <button
-                      type="submit"
-                      className="flex flex-1 items-center justify-center px-3 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-700 disabled:pointer-events-none disabled:opacity-40 dark:hover:bg-red-950/40 dark:hover:text-red-300"
-                      aria-label={`Delete ${r.name}`}
-                      disabled={deletingId !== null}
-                    >
-                      {deletingId === r.id ? (
-                        <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                          …
-                        </span>
-                      ) : (
-                        <Trash2 className="size-4 stroke-[2]" aria-hidden />
-                      )}
-                    </button>
-                  </fetcher.Form>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
+        <RecipeList
+          recipes={recipes}
+          deletingId={deletingId}
+          deleteError={deleteError}
+          onDeleteStart={handleDeleteStart}
+          onDeleteSuccess={handleDeleteSuccess}
+          onDeleteFailure={handleDeleteFailure}
+          onDeleteErrorDismiss={handleDeleteErrorDismiss}
+        />
       ) : null}
     </div>
   );
