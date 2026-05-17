@@ -43,7 +43,9 @@ agent:
     name: ""
     key: GEMINI_API_KEY
     value: ""
-  resources: {}
+  resources:
+    requests:
+      memory: 512Mi
   service:
     port: 4100
 
@@ -65,7 +67,11 @@ web:
 
 ingress:
   enabled: false
-  # Routes only / to the web Service; backend API stays in-cluster (not on this Ingress).
+  # Routes /agent to the agent Service and / to the web Service.
   className: nginx
   host: recipes.local
-  annotations: {}
+  annotations:
+    # Keep the agent SSE endpoint open for long-running responses.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
