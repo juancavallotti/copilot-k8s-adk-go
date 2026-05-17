@@ -1,0 +1,52 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "recipes.fullname" . }}-postgres-migrate
+  labels:
+    {{- include "recipes.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres-migrate
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        {{- include "recipes.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: postgres-migrate
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
+          imagePullPolicy: {{ .Values.postgres.image.pullPolicy }}
+          env:
+            - name: PGHOST
+              value: {{ include "recipes.postgres.serviceName" . | quote }}
+            - name: PGPORT
+              value: "5432"
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "recipes.fullname" . }}-postgres
+                  key: postgres-username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "recipes.fullname" . }}-postgres
+                  key: postgres-password
+            - name: PGDATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "recipes.fullname" . }}-postgres
+                  key: postgres-database
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -q; do
+                sleep 1
+              done
+              psql -v ON_ERROR_STOP=1 -f /schema/db.sql
