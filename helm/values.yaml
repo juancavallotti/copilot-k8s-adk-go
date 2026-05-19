@@ -32,11 +32,14 @@ agent:
   replicas: 1
   model: gemini-3.1-flash-lite
   imageModel: gemini-3.1-flash-image-preview
+  openAIModel: gpt-5.4-mini
+  openAIImageModel: gpt-image-1-mini
+  anthropicModel: claude-haiku-4-5
   imageGenerationConcurrency: 3
   imageScratch:
     mountPath: /agent-images
     sizeLimit: 100Mi
-  # Secret containing the Gemini API key.
+  # Secret containing agent provider API keys.
   # Production options:
   # - set name to reference an existing Secret; or
   # - set create=true and pass value via --set-string / a private values file.
@@ -45,6 +48,14 @@ agent:
     create: false
     name: ""
     key: GEMINI_API_KEY
+    value: ""
+  # Optional provider keys. When geminiApiKeySecret.create=true, non-empty values
+  # are added to the same Secret. Existing Secrets may provide these keys directly.
+  openaiApiKeySecret:
+    key: OPENAI_API_KEY
+    value: ""
+  anthropicApiKeySecret:
+    key: ANTHROPIC_API_KEY
     value: ""
   resources:
     requests:

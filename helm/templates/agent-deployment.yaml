@@ -65,6 +65,12 @@ spec:
               value: {{ .Values.agent.model | quote }}
             - name: AGENT_IMAGE_MODEL
               value: {{ .Values.agent.imageModel | quote }}
+            - name: AGENT_OPENAI_MODEL
+              value: {{ .Values.agent.openAIModel | quote }}
+            - name: AGENT_OPENAI_IMAGE_MODEL
+              value: {{ .Values.agent.openAIImageModel | quote }}
+            - name: AGENT_ANTHROPIC_MODEL
+              value: {{ .Values.agent.anthropicModel | quote }}
             - name: AGENT_IMAGE_GENERATION_CONCURRENCY
               value: {{ .Values.agent.imageGenerationConcurrency | quote }}
             - name: AGENT_IMAGE_OUTPUT_DIR
@@ -74,6 +80,18 @@ spec:
                 secretKeyRef:
                   name: {{ include "recipes.agent.geminiApiKeySecretName" . }}
                   key: {{ .Values.agent.geminiApiKeySecret.key | quote }}
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "recipes.agent.geminiApiKeySecretName" . }}
+                  key: {{ .Values.agent.openaiApiKeySecret.key | quote }}
+                  optional: true
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "recipes.agent.geminiApiKeySecretName" . }}
+                  key: {{ .Values.agent.anthropicApiKeySecret.key | quote }}
+                  optional: true
             - name: DB_HOST
               value: {{ include "recipes.postgres.serviceName" . | quote }}
             - name: DB_PORT
