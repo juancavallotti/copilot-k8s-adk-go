@@ -429,6 +429,135 @@ func TestRun_ImportReadsJSONLines(t *testing.T) {
 	}
 }
 
+func TestRun_ExportStripsPhotoContentsByDefault(t *testing.T) {
+	repo := &fakeRepo{
+		recipes: []types.Recipe{
+			{
+				ID:   "recipe-1",
+				Name: "One",
+				Photos: []types.Photo{
+					{ID: "p1", ImageBase64: "aGVsbG8=", Featured: true},
+					{ID: "p2", ImageBase64: "d29ybGQ=", Featured: false},
+				},
+			},
+		},
+	}
+	var factoryCalls int
+	r, stdout, _ := testRunner("", repo, &factoryCalls)
+
+	if err := r.Run(context.Background(), []string{"export", "recipe-1"}); err != nil {
+		t.Fatalf("Run export: %v", err)
+	}
+	var out types.Recipe
+	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
+		t.Fatalf("output is not recipe JSON: %v\n%s", err, stdout.String())
+	}
+	if len(out.Photos) != 2 {
+		t.Fatalf("photos len = %d, want 2", len(out.Photos))
+	}
+	for i, photo := range out.Photos {
+		if photo.ID == "" {
+			t.Fatalf("photo %d id was stripped: %#v", i, photo)
+		}
+		if photo.ImageBase64 != "" {
+			t.Fatalf("photo %d image_base64 = %q, want empty", i, photo.ImageBase64)
+		}
+	}
+	if !out.Photos[0].Featured {
+		t.Fatalf("photo 0 featured flag was lost")
+	}
+}
+
+func TestRun_ExportKeepsPhotoContentsWhenFlagGiven(t *testing.T) {
+	repo := &fakeRepo{
+		recipes: []types.Recipe{
+			{
+				ID:   "recipe-1",
+				Name: "One",
+				Photos: []types.Photo{
+					{ID: "p1", ImageBase64: "aGVsbG8=", Featured: true},
+				},
+			},
+		},
+	}
+	var factoryCalls int
+	r, stdout, _ := testRunner("", repo, &factoryCalls)
+
+	if err := r.Run(context.Background(), []string{"export", "recipe-1", "--image-contents"}); err != nil {
+		t.Fatalf("Run export --image-contents: %v", err)
+	}
+	var out types.Recipe
+	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
+		t.Fatalf("output is not recipe JSON: %v\n%s", err, stdout.String())
+	}
+	if len(out.Photos) != 1 || out.Photos[0].ImageBase64 != "aGVsbG8=" {
+		t.Fatalf("photo contents not preserved: %#v", out.Photos)
+	}
+}
+
+func TestRun_ExportRejectsUnknownFlag(t *testing.T) {
+	repo := &fakeRepo{recipes: []types.Recipe{{ID: "recipe-1"}}}
+	var factoryCalls int
+	r, _, stderr := testRunner("", repo, &factoryCalls)
+
+	err := r.Run(context.Background(), []string{"export", "recipe-1", "--bogus"})
+	if !errors.Is(err, ErrUsage) {
+		t.Fatalf("err = %v, want ErrUsage", err)
+	}
+	if !strings.Contains(stderr.String(), "--image-contents") {
+		t.Fatalf("stderr = %q, want usage mentioning --image-contents", stderr.String())
+	}
+}
+
+func TestRun_ExportAllStripsPhotoContentsByDefault(t *testing.T) {
+	repo := &fakeRepo{
+		recipes: []types.Recipe{
+			{ID: "1", Name: "One", Photos: []types.Photo{{ID: "p1", ImageBase64: "aGVsbG8="}}},
+			{ID: "2", Name: "Two", Photos: []types.Photo{{ID: "p2", ImageBase64: "d29ybGQ="}}},
+		},
+	}
+	var factoryCalls int
+	r, stdout, _ := testRunner("", repo, &factoryCalls)
+
+	if err := r.Run(context.Background(), []string{"export-all"}); err != nil {
+		t.Fatalf("Run export-all: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(stdout.String(), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("export-all wrote %d lines, want 2: %q", len(lines), stdout.String())
+	}
+	for i, line := range lines {
+		var out types.Recipe
+		if err := json.Unmarshal([]byte(line), &out); err != nil {
+			t.Fatalf("line %d not JSON: %v\n%s", i, err, line)
+		}
+		if len(out.Photos) != 1 || out.Photos[0].ID == "" || out.Photos[0].ImageBase64 != "" {
+			t.Fatalf("line %d photo not stripped: %#v", i, out.Photos)
+		}
+	}
+}
+
+func TestRun_ExportAllKeepsPhotoContentsWhenFlagGiven(t *testing.T) {
+	repo := &fakeRepo{
+		recipes: []types.Recipe{
+			{ID: "1", Name: "One", Photos: []types.Photo{{ID: "p1", ImageBase64: "aGVsbG8="}}},
+		},
+	}
+	var factoryCalls int
+	r, stdout, _ := testRunner("", repo, &factoryCalls)
+
+	if err := r.Run(context.Background(), []string{"export-all", "--image-contents"}); err != nil {
+		t.Fatalf("Run export-all --image-contents: %v", err)
+	}
+	var out types.Recipe
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout.String())), &out); err != nil {
+		t.Fatalf("output is not recipe JSON: %v\n%s", err, stdout.String())
+	}
+	if len(out.Photos) != 1 || out.Photos[0].ImageBase64 != "aGVsbG8=" {
+		t.Fatalf("photo contents not preserved: %#v", out.Photos)
+	}
+}
+
 func TestRun_ListPrintsTable(t *testing.T) {
 	repo := &fakeRepo{
 		recipes: []types.Recipe{

@@ -47,15 +47,18 @@ func (r Runner) cmdList(ctx context.Context, repo RecipeRepo) error {
 	return w.Flush()
 }
 
-func (r Runner) cmdExport(ctx context.Context, repo RecipeRepo, id string) error {
+func (r Runner) cmdExport(ctx context.Context, repo RecipeRepo, id string, includeImageContents bool) error {
 	rec, err := repo.GetRecipe(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return err
 	}
+	if !includeImageContents {
+		stripPhotoContents(&rec)
+	}
 	return r.writeIndentedJSON(rec)
 }
 
-func (r Runner) cmdExportAll(ctx context.Context, repo RecipeRepo) error {
+func (r Runner) cmdExportAll(ctx context.Context, repo RecipeRepo, includeImageContents bool) error {
 	summaries, err := repo.GetRecipes(ctx)
 	if err != nil {
 		return err
@@ -66,11 +69,23 @@ func (r Runner) cmdExportAll(ctx context.Context, repo RecipeRepo) error {
 		if err != nil {
 			return fmt.Errorf("recipe %s: %w", s.ID, err)
 		}
+		if !includeImageContents {
+			stripPhotoContents(&rec)
+		}
 		if err := enc.Encode(rec); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// stripPhotoContents clears the base64 image data from each photo while
+// preserving the photo IDs and metadata. Used by export commands when the
+// caller did not request --image-contents.
+func stripPhotoContents(rec *types.Recipe) {
+	for i := range rec.Photos {
+		rec.Photos[i].ImageBase64 = ""
+	}
 }
 
 func (r Runner) cmdCreate(ctx context.Context, repo RecipeRepo, path string) error {

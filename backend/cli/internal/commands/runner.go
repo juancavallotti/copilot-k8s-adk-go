@@ -67,15 +67,21 @@ func (r Runner) Run(ctx context.Context, args []string) error {
 		}
 		return r.cmdList(ctx, repo)
 	case "export":
-		if len(args) != 2 {
-			return r.usageError("usage: recipes-cli export <id>")
+		if len(args) != 2 && len(args) != 3 {
+			return r.usageError("usage: recipes-cli export <id> [--image-contents]")
 		}
-		return r.cmdExport(ctx, repo, args[1])
+		if len(args) == 3 && args[2] != "--image-contents" {
+			return r.usageError("usage: recipes-cli export <id> [--image-contents]")
+		}
+		return r.cmdExport(ctx, repo, args[1], len(args) == 3)
 	case "export-all":
-		if len(args) != 1 {
-			return r.usageError("usage: recipes-cli export-all")
+		if len(args) != 1 && len(args) != 2 {
+			return r.usageError("usage: recipes-cli export-all [--image-contents]")
 		}
-		return r.cmdExportAll(ctx, repo)
+		if len(args) == 2 && args[1] != "--image-contents" {
+			return r.usageError("usage: recipes-cli export-all [--image-contents]")
+		}
+		return r.cmdExportAll(ctx, repo, len(args) == 2)
 	case "create":
 		if len(args) != 2 {
 			return r.usageError("usage: recipes-cli create <path>")
@@ -125,8 +131,12 @@ func (r Runner) usage() {
 
 Commands:
   list                          Print recipe id and title (name), tab-separated.
-  export <id>                   Print one recipe as indented JSON.
-  export-all                    Print all recipes as JSON Lines (one JSON object per line).
+  export <id> [--image-contents]
+                                Print one recipe as indented JSON. Photo image base64 data is omitted
+                                unless --image-contents is given.
+  export-all [--image-contents]
+                                Print all recipes as JSON Lines (one JSON object per line). Photo image
+                                base64 data is omitted unless --image-contents is given.
   create <path>                 Read one recipe JSON object (use "-" for stdin); create it.
   patch <id> <path>             Read one partial recipe JSON object (use "-" for stdin); patch it.
   delete <id>                   Delete one recipe by id.
