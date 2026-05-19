@@ -10,6 +10,7 @@ import (
 
 	"juancavallotti.com/recipes-agent/internal/config"
 	"juancavallotti.com/recipes-agent/internal/copilot"
+	"juancavallotti.com/recipes-agent/internal/modelrouter"
 	"juancavallotti.com/recipes-agent/internal/server"
 )
 
@@ -24,12 +25,36 @@ func Run() {
 	}
 
 	ctx := context.Background()
-	copilot, err := copilot.New(ctx, cfg)
+
+	registry, err := modelrouter.BuildRegistry(cfg)
+	if err != nil {
+		log.Fatalf("model registry: %v", err)
+	}
+
+	agentBuilder, ok := registry.AgentBuilder(registry.DefaultAgent)
+	if !ok {
+		log.Fatalf("model registry: missing default agent builder %q", registry.DefaultAgent)
+	}
+	imageBuilder, ok := registry.ImageBuilder(registry.DefaultImage)
+	if !ok {
+		log.Fatalf("model registry: missing default image builder %q", registry.DefaultImage)
+	}
+
+	llm, err := agentBuilder(ctx)
+	if err != nil {
+		log.Fatalf("build default chat model: %v", err)
+	}
+	imgGen, err := imageBuilder(ctx)
+	if err != nil {
+		log.Fatalf("build default image generator: %v", err)
+	}
+
+	copilot, err := copilot.NewWith(ctx, cfg, llm, imgGen)
 	if err != nil {
 		log.Fatalf("agent: %v", err)
 	}
 
-	handler, err := server.NewHTTPHandler(agent.NewSingleLoader(copilot), cfg)
+	handler, err := server.NewHTTPHandler(agent.NewSingleLoader(copilot), cfg, registry)
 	if err != nil {
 		log.Fatalf("server: %v", err)
 	}

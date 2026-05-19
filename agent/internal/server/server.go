@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os/exec"
@@ -15,10 +16,11 @@ import (
 	"google.golang.org/adk/session"
 
 	"juancavallotti.com/recipes-agent/internal/config"
+	"juancavallotti.com/recipes-agent/internal/modelrouter"
 	"juancavallotti.com/recipes-agent/internal/tools/recipescli"
 )
 
-func NewHTTPHandler(loader agent.Loader, cfg config.Config) (http.Handler, error) {
+func NewHTTPHandler(loader agent.Loader, cfg config.Config, registry *modelrouter.Registry) (http.Handler, error) {
 	restServer, err := adkrest.NewServer(adkrest.ServerConfig{
 		AgentLoader:     loader,
 		SessionService:  session.InMemoryService(),
@@ -33,11 +35,36 @@ func NewHTTPHandler(loader agent.Loader, cfg config.Config) (http.Handler, error
 	mux := http.NewServeMux()
 	mux.HandleFunc("/livez", liveness)
 	mux.HandleFunc("/readyz", readiness(cfg))
+	mux.HandleFunc("/agent/providers", providers(registry))
 	mux.HandleFunc("/agent", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/agent/", http.StatusTemporaryRedirect)
 	})
 	mux.Handle("/agent/", http.StripPrefix("/agent", restServer))
 	return logRequests(allowCORS(mux)), nil
+}
+
+type providersResponse struct {
+	DefaultAgentModel string                     `json:"defaultAgentModel"`
+	DefaultImageModel string                     `json:"defaultImageModel"`
+	AgentOptions      []modelrouter.AgentOption  `json:"agentOptions"`
+	ImageOptions      []modelrouter.ImageOption  `json:"imageOptions"`
+}
+
+func providers(registry *modelrouter.Registry) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		body := providersResponse{
+			DefaultAgentModel: registry.DefaultAgent,
+			DefaultImageModel: registry.DefaultImage,
+			AgentOptions:      registry.AgentOptions,
+			ImageOptions:      registry.ImageOptions,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(body)
+	}
 }
 
 type statusRecordingResponseWriter struct {
