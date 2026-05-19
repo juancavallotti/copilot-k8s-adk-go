@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 
+	adkanthropic "github.com/Alcova-AI/adk-anthropic-go"
+	adkopenai "github.com/byebyebruce/adk-go-openai"
 	"google.golang.org/adk/model"
 	"google.golang.org/adk/model/gemini"
 	"google.golang.org/genai"
@@ -109,6 +111,49 @@ func BuildRegistry(cfg config.Config) (*Registry, error) {
 
 	r.DefaultAgent = googleAgentID
 	r.DefaultImage = googleImageID
+
+	if cfg.AnthropicAPIKey != "" {
+		anthropicKey := cfg.AnthropicAPIKey
+		anthropicModel := cfg.AnthropicModel
+		anthropicID := id(ProviderAnthropic, anthropicModel)
+		r.agentBuilders[anthropicID] = func(ctx context.Context) (model.LLM, error) {
+			return adkanthropic.NewModel(ctx, anthropicModel, &adkanthropic.Config{APIKey: anthropicKey})
+		}
+		r.AgentOptions = append(r.AgentOptions, AgentOption{
+			ID:       anthropicID,
+			Provider: ProviderAnthropic,
+			Model:    anthropicModel,
+			Label:    "Anthropic · " + anthropicModel,
+		})
+	}
+
+	if cfg.OpenAIAPIKey != "" {
+		openaiKey := cfg.OpenAIAPIKey
+		openaiModel := cfg.OpenAIModel
+		openaiImageModel := cfg.OpenAIImageModel
+
+		openaiAgentID := id(ProviderOpenAI, openaiModel)
+		r.agentBuilders[openaiAgentID] = func(ctx context.Context) (model.LLM, error) {
+			return adkopenai.NewOpenAIModelWithAPIKey(openaiModel, openaiKey), nil
+		}
+		r.AgentOptions = append(r.AgentOptions, AgentOption{
+			ID:       openaiAgentID,
+			Provider: ProviderOpenAI,
+			Model:    openaiModel,
+			Label:    "OpenAI · " + openaiModel,
+		})
+
+		openaiImageID := id(ProviderOpenAI, openaiImageModel)
+		r.imageBuilders[openaiImageID] = func(ctx context.Context) (imagegen.RecipeImageGenerator, error) {
+			return imagegen.NewOpenAIRecipeImageGenerator(openaiKey, openaiImageModel)
+		}
+		r.ImageOptions = append(r.ImageOptions, ImageOption{
+			ID:       openaiImageID,
+			Provider: ProviderOpenAI,
+			Model:    openaiImageModel,
+			Label:    "OpenAI · " + openaiImageModel,
+		})
+	}
 
 	return r, nil
 }

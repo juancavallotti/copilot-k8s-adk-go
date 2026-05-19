@@ -41,6 +41,58 @@ func TestBuildRegistryRequiresGeminiAPIKey(t *testing.T) {
 	}
 }
 
+func TestBuildRegistryAddsAnthropicWhenKeyPresent(t *testing.T) {
+	r, err := BuildRegistry(config.Config{
+		GeminiAPIKey:    "fake-key",
+		Model:           "gemini-3.1-flash-lite",
+		ImageModel:      "gemini-3.1-flash-image-preview",
+		AnthropicAPIKey: "anth-key",
+		AnthropicModel:  "claude-haiku-4-5",
+	})
+	if err != nil {
+		t.Fatalf("BuildRegistry() error = %v", err)
+	}
+	want := "anthropic:claude-haiku-4-5"
+	if _, ok := r.AgentBuilder(want); !ok {
+		t.Errorf("AgentBuilder(%q) missing", want)
+	}
+	found := false
+	for _, opt := range r.AgentOptions {
+		if opt.ID == want {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("AgentOptions missing %q: %+v", want, r.AgentOptions)
+	}
+	// Anthropic has no image model.
+	if len(r.ImageOptions) != 1 || r.ImageOptions[0].Provider != ProviderGoogle {
+		t.Errorf("ImageOptions should still be Google-only: %+v", r.ImageOptions)
+	}
+}
+
+func TestBuildRegistryAddsOpenAIWhenKeyPresent(t *testing.T) {
+	r, err := BuildRegistry(config.Config{
+		GeminiAPIKey:     "fake-key",
+		Model:            "gemini-3.1-flash-lite",
+		ImageModel:       "gemini-3.1-flash-image-preview",
+		OpenAIAPIKey:     "openai-key",
+		OpenAIModel:      "gpt-5.4-mini",
+		OpenAIImageModel: "gpt-image-1-mini",
+	})
+	if err != nil {
+		t.Fatalf("BuildRegistry() error = %v", err)
+	}
+	wantAgent := "openai:gpt-5.4-mini"
+	wantImage := "openai:gpt-image-1-mini"
+	if _, ok := r.AgentBuilder(wantAgent); !ok {
+		t.Errorf("AgentBuilder(%q) missing", wantAgent)
+	}
+	if _, ok := r.ImageBuilder(wantImage); !ok {
+		t.Errorf("ImageBuilder(%q) missing", wantImage)
+	}
+}
+
 func TestRegistryBuilderLookup(t *testing.T) {
 	r, err := BuildRegistry(config.Config{
 		GeminiAPIKey: "fake-key",

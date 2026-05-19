@@ -5,14 +5,18 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
-	"google.golang.org/adk/agent"
+	"google.golang.org/adk/artifact"
+	"google.golang.org/adk/memory"
+	"google.golang.org/adk/session"
 
 	"juancavallotti.com/recipes-agent/internal/config"
-	"juancavallotti.com/recipes-agent/internal/copilot"
 	"juancavallotti.com/recipes-agent/internal/modelrouter"
 	"juancavallotti.com/recipes-agent/internal/server"
 )
+
+const sseWriteTimeout = 120 * time.Second
 
 func Run() {
 	log.SetOutput(os.Stdout)
@@ -31,36 +35,23 @@ func Run() {
 		log.Fatalf("model registry: %v", err)
 	}
 
-	agentBuilder, ok := registry.AgentBuilder(registry.DefaultAgent)
-	if !ok {
-		log.Fatalf("model registry: missing default agent builder %q", registry.DefaultAgent)
-	}
-	imageBuilder, ok := registry.ImageBuilder(registry.DefaultImage)
-	if !ok {
-		log.Fatalf("model registry: missing default image builder %q", registry.DefaultImage)
-	}
+	router := modelrouter.NewRouter(
+		registry,
+		cfg,
+		session.InMemoryService(),
+		memory.InMemoryService(),
+		artifact.InMemoryService(),
+		sseWriteTimeout,
+	)
 
-	llm, err := agentBuilder(ctx)
-	if err != nil {
-		log.Fatalf("build default chat model: %v", err)
-	}
-	imgGen, err := imageBuilder(ctx)
-	if err != nil {
-		log.Fatalf("build default image generator: %v", err)
-	}
-
-	copilot, err := copilot.NewWith(ctx, cfg, llm, imgGen)
-	if err != nil {
-		log.Fatalf("agent: %v", err)
-	}
-
-	handler, err := server.NewHTTPHandler(agent.NewSingleLoader(copilot), cfg, registry)
+	handler, err := server.NewHTTPHandler(ctx, cfg, router, registry)
 	if err != nil {
 		log.Fatalf("server: %v", err)
 	}
 
 	log.Printf("starting recipes agent on %s", cfg.Addr)
 	log.Printf("ADK API available under /agent (SSE: /agent/run_sse)")
+	log.Printf("registered agent models: %d, image models: %d", len(registry.AgentOptions), len(registry.ImageOptions))
 	if err := http.ListenAndServe(cfg.Addr, handler); err != nil {
 		log.Fatalf("server: %v", err)
 	}

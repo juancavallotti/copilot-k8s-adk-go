@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -9,25 +10,17 @@ import (
 	"strings"
 	"time"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/artifact"
-	"google.golang.org/adk/memory"
-	"google.golang.org/adk/server/adkrest"
-	"google.golang.org/adk/session"
-
 	"juancavallotti.com/recipes-agent/internal/config"
 	"juancavallotti.com/recipes-agent/internal/modelrouter"
 	"juancavallotti.com/recipes-agent/internal/tools/recipescli"
 )
 
-func NewHTTPHandler(loader agent.Loader, cfg config.Config, registry *modelrouter.Registry) (http.Handler, error) {
-	restServer, err := adkrest.NewServer(adkrest.ServerConfig{
-		AgentLoader:     loader,
-		SessionService:  session.InMemoryService(),
-		MemoryService:   memory.InMemoryService(),
-		ArtifactService: artifact.InMemoryService(),
-		SSEWriteTimeout: 120 * time.Second,
-	})
+func NewHTTPHandler(ctx context.Context, cfg config.Config, router *modelrouter.Router, registry *modelrouter.Registry) (http.Handler, error) {
+	defaultSel, err := router.Resolve(modelrouter.Selection{})
+	if err != nil {
+		return nil, err
+	}
+	defaultServer, err := router.HandlerFor(ctx, defaultSel)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +32,7 @@ func NewHTTPHandler(loader agent.Loader, cfg config.Config, registry *modelroute
 	mux.HandleFunc("/agent", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/agent/", http.StatusTemporaryRedirect)
 	})
-	mux.Handle("/agent/", http.StripPrefix("/agent", restServer))
+	mux.Handle("/agent/", http.StripPrefix("/agent", newModelRoutingHandler(router, defaultServer)))
 	return logRequests(allowCORS(mux)), nil
 }
 
