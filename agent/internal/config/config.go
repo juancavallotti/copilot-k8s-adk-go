@@ -37,6 +37,13 @@ type Config struct {
 
 	AnthropicAPIKey string
 	AnthropicModel  string
+
+	LogLevel string
+
+	// TracesCLI, when non-empty, is the recipes-cli binary the agent pipes its
+	// slog records into for persistence (one trace row per record). Empty
+	// disables piping; agent still logs to stdout.
+	TracesCLI string
 }
 
 func LoadDotenv() {
@@ -64,6 +71,8 @@ func Read() Config {
 		OpenAIImageModel:           os.Getenv("AGENT_OPENAI_IMAGE_MODEL"),
 		AnthropicAPIKey:            os.Getenv("ANTHROPIC_API_KEY"),
 		AnthropicModel:             os.Getenv("AGENT_ANTHROPIC_MODEL"),
+		LogLevel:                   os.Getenv("AGENT_LOG_LEVEL"),
+		TracesCLI:                  os.Getenv("AGENT_TRACES_CLI"),
 	}
 	if cfg.Addr == "" {
 		cfg.Addr = defaultAddr

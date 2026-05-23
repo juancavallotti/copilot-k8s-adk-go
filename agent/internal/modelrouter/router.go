@@ -10,11 +10,14 @@ import (
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/artifact"
 	"google.golang.org/adk/memory"
+	adkplugin "google.golang.org/adk/plugin"
+	"google.golang.org/adk/runner"
 	"google.golang.org/adk/server/adkrest"
 	"google.golang.org/adk/session"
 
 	"juancavallotti.com/recipes-agent/internal/config"
 	"juancavallotti.com/recipes-agent/internal/copilot"
+	"juancavallotti.com/recipes-agent/internal/observability"
 )
 
 // Selection identifies the (agent model, image model) combo for one request.
@@ -116,12 +119,20 @@ func (r *Router) build(ctx context.Context, sel Selection) (*adkrest.Server, err
 		return nil, fmt.Errorf("build agent for %s: %w", sel.key(), err)
 	}
 
+	eventPlugin, err := observability.NewEventPlugin()
+	if err != nil {
+		return nil, fmt.Errorf("build observability plugin: %w", err)
+	}
+
 	srv, err := adkrest.NewServer(adkrest.ServerConfig{
 		AgentLoader:     agent.NewSingleLoader(a),
 		SessionService:  r.sessionService,
 		MemoryService:   r.memoryService,
 		ArtifactService: r.artifactService,
 		SSEWriteTimeout: r.sseWriteTimeout,
+		PluginConfig: runner.PluginConfig{
+			Plugins: []*adkplugin.Plugin{eventPlugin},
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create adkrest server for %s: %w", sel.key(), err)

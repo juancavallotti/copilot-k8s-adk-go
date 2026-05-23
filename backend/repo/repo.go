@@ -3,8 +3,10 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	_ "github.com/lib/pq"
 
@@ -56,6 +58,18 @@ func (r *Repo) DeleteRecipe(ctx context.Context, id string) error {
 
 func (r *Repo) ImportRecipe(ctx context.Context, recipe types.Recipe) error {
 	return r.service.ImportRecipe(ctx, recipe)
+}
+
+func (r *Repo) LogTrace(ctx context.Context, eventID string, occurredAt time.Time, data json.RawMessage) error {
+	return r.service.LogTrace(ctx, eventID, occurredAt, data)
+}
+
+func (r *Repo) ListEvents(ctx context.Context, limit, offset int) ([]types.Event, error) {
+	return r.service.ListEvents(ctx, limit, offset)
+}
+
+func (r *Repo) ListTracesByEvent(ctx context.Context, eventID string) ([]types.Trace, error) {
+	return r.service.ListTracesByEvent(ctx, eventID)
 }
 
 func NewRepo() (*Repo, error) {

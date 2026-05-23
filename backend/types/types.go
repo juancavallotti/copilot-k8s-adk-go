@@ -1,6 +1,9 @@
 package types
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type Recipe struct {
 	ID           string    `json:"id"`
@@ -19,4 +22,18 @@ type Photo struct {
 	ID          string `json:"id,omitempty"`
 	ImageBase64 string `json:"image_base64"`
 	Featured    bool   `json:"featured"`
+}
+
+type Event struct {
+	EventID    string    `json:"event_id"`
+	StartedAt  time.Time `json:"started_at"`
+	EndedAt    time.Time `json:"ended_at"`
+	TraceCount int       `json:"trace_count"`
+}
+
+type Trace struct {
+	ID         string          `json:"id"`
+	EventID    string          `json:"event_id"`
+	OccurredAt time.Time       `json:"occurred_at"`
+	Data       json.RawMessage `json:"data"`
 }

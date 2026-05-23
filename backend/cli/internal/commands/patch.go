@@ -18,6 +18,32 @@ func (p recipePatch) anySet() bool {
 		p.Category != nil || p.Image != nil || p.Photos != nil
 }
 
+func (p recipePatch) setFields() []string {
+	var out []string
+	if p.Name != nil {
+		out = append(out, "name")
+	}
+	if p.Description != nil {
+		out = append(out, "description")
+	}
+	if p.Ingredients != nil {
+		out = append(out, "ingredients")
+	}
+	if p.Instructions != nil {
+		out = append(out, "instructions")
+	}
+	if p.Category != nil {
+		out = append(out, "category")
+	}
+	if p.Image != nil {
+		out = append(out, "image")
+	}
+	if p.Photos != nil {
+		out = append(out, "photos")
+	}
+	return out
+}
+
 func mergeRecipePatch(cur types.Recipe, p recipePatch) types.Recipe {
 	out := cur
 	if p.Name != nil {

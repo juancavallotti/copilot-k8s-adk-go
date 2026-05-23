@@ -7,5 +7,7 @@ export default [
     route("create", "routes/create.tsx"),
     route("recipe/:id/edit", "routes/recipe-edit.tsx"),
     route("recipe/:id", "routes/recipe.tsx"),
+    route("traces", "routes/traces._index.tsx"),
+    route("traces/:event_id", "routes/traces.$event_id.tsx"),
   ]),
 ] satisfies RouteConfig;

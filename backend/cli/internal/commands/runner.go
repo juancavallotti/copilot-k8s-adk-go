@@ -2,9 +2,11 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	types "juancavallotti.com/recipe-types"
 )
@@ -22,6 +24,7 @@ type RecipeRepo interface {
 	SetFeaturedRecipePhoto(ctx context.Context, recipeID string, photoID string) error
 	DeleteRecipe(ctx context.Context, id string) error
 	ImportRecipe(ctx context.Context, recipe types.Recipe) error
+	LogTrace(ctx context.Context, eventID string, occurredAt time.Time, data json.RawMessage) error
 }
 
 type RepoFactory func() (RecipeRepo, error)
@@ -83,43 +86,80 @@ func (r Runner) Run(ctx context.Context, args []string) error {
 		}
 		return r.cmdExportAll(ctx, repo, len(args) == 2)
 	case "create":
-		if len(args) != 2 {
-			return r.usageError("usage: recipes-cli create <path>")
+		const usage = "usage: recipes-cli create <path> [--json]"
+		if len(args) < 2 || len(args) > 3 {
+			return r.usageError(usage)
 		}
-		return r.cmdCreate(ctx, repo, args[1])
+		returnJSON, ok := parseJSONFlag(args[2:])
+		if !ok {
+			return r.usageError(usage)
+		}
+		return r.cmdCreate(ctx, repo, args[1], returnJSON)
 	case "patch":
-		if len(args) != 3 {
-			return r.usageError("usage: recipes-cli patch <id> <path>")
+		const usage = "usage: recipes-cli patch <id> <path> [--json]"
+		if len(args) < 3 || len(args) > 4 {
+			return r.usageError(usage)
 		}
-		return r.cmdPatch(ctx, repo, args[1], args[2])
+		returnJSON, ok := parseJSONFlag(args[3:])
+		if !ok {
+			return r.usageError(usage)
+		}
+		return r.cmdPatch(ctx, repo, args[1], args[2], returnJSON)
 	case "delete":
 		if len(args) != 2 {
 			return r.usageError("usage: recipes-cli delete <id>")
 		}
 		return r.cmdDelete(ctx, repo, args[1])
 	case "add-photo":
-		if len(args) != 3 && len(args) != 4 {
-			return r.usageError("usage: recipes-cli add-photo <recipe-id> <image-path|-> [--featured]")
+		const usage = "usage: recipes-cli add-photo <recipe-id> <image-path|-> [--featured] [--json]"
+		if len(args) < 3 || len(args) > 5 {
+			return r.usageError(usage)
 		}
-		if len(args) == 4 && args[3] != "--featured" {
-			return r.usageError("usage: recipes-cli add-photo <recipe-id> <image-path|-> [--featured]")
+		var featured, returnJSON bool
+		for _, a := range args[3:] {
+			switch a {
+			case "--featured":
+				if featured {
+					return r.usageError(usage)
+				}
+				featured = true
+			case "--json":
+				if returnJSON {
+					return r.usageError(usage)
+				}
+				returnJSON = true
+			default:
+				return r.usageError(usage)
+			}
 		}
-		return r.cmdAddPhoto(ctx, repo, args[1], args[2], len(args) == 4)
+		return r.cmdAddPhoto(ctx, repo, args[1], args[2], featured, returnJSON)
 	case "delete-photo":
-		if len(args) != 3 {
-			return r.usageError("usage: recipes-cli delete-photo <recipe-id> <photo-id>")
+		const usage = "usage: recipes-cli delete-photo <recipe-id> <photo-id> [--json]"
+		if len(args) < 3 || len(args) > 4 {
+			return r.usageError(usage)
 		}
-		return r.cmdDeletePhoto(ctx, repo, args[1], args[2])
+		returnJSON, ok := parseJSONFlag(args[3:])
+		if !ok {
+			return r.usageError(usage)
+		}
+		return r.cmdDeletePhoto(ctx, repo, args[1], args[2], returnJSON)
 	case "set-featured-photo":
-		if len(args) != 3 {
-			return r.usageError("usage: recipes-cli set-featured-photo <recipe-id> <photo-id>")
+		const usage = "usage: recipes-cli set-featured-photo <recipe-id> <photo-id> [--json]"
+		if len(args) < 3 || len(args) > 4 {
+			return r.usageError(usage)
 		}
-		return r.cmdSetFeaturedPhoto(ctx, repo, args[1], args[2])
+		returnJSON, ok := parseJSONFlag(args[3:])
+		if !ok {
+			return r.usageError(usage)
+		}
+		return r.cmdSetFeaturedPhoto(ctx, repo, args[1], args[2], returnJSON)
 	case "import":
 		if len(args) != 2 {
 			return r.usageError("usage: recipes-cli import <path>")
 		}
 		return r.cmdImport(ctx, repo, args[1])
+	case "log-trace":
+		return r.cmdLogTrace(ctx, repo, args[1:])
 	default:
 		r.usage()
 		return ErrUsage
@@ -129,6 +169,9 @@ func (r Runner) Run(ctx context.Context, args []string) error {
 func (r Runner) usage() {
 	fmt.Fprintf(r.stderr, `recipes-cli — recipe backup and inspection (uses DB_* from .env like the API).
 
+Update commands print a short success summary by default. Pass --json to print the
+full updated recipe as indented JSON instead (useful for piping into other tools).
+
 Commands:
   list                          Print recipe id and title (name), tab-separated.
   export <id> [--image-contents]
@@ -137,15 +180,20 @@ Commands:
   export-all [--image-contents]
                                 Print all recipes as JSON Lines (one JSON object per line). Photo image
                                 base64 data is omitted unless --image-contents is given.
-  create <path>                 Read one recipe JSON object (use "-" for stdin); create it.
-  patch <id> <path>             Read one partial recipe JSON object (use "-" for stdin); patch it.
+  create <path> [--json]        Read one recipe JSON object (use "-" for stdin); create it.
+  patch <id> <path> [--json]    Read one partial recipe JSON object (use "-" for stdin); patch it.
   delete <id>                   Delete one recipe by id.
-  add-photo <id> <path|-> [--featured]
+  add-photo <id> <path|-> [--featured] [--json]
                                 Attach a photo; pass "-" to read raw base64 image data from stdin.
-  delete-photo <id> <photo-id>  Remove a photo from a recipe by photo id.
-  set-featured-photo <id> <photo-id>
+  delete-photo <id> <photo-id> [--json]
+                                Remove a photo from a recipe by photo id.
+  set-featured-photo <id> <photo-id> [--json]
                                 Mark a recipe photo as featured.
   import <path>                 Read JSONL from file (use "-" for stdin); upsert each recipe.
+  log-trace [--event-id-field <name>] [--time-field <name>]
+                                Read JSON-lines from stdin; insert each as a trace row.
+                                event_id   <- named field (default: invocation_id).
+                                occurred_at <- named field, RFC3339 (default: time).
   schema                        Print the JSON Schema for create and patch payloads.
 
 `)
@@ -154,4 +202,19 @@ Commands:
 func (r Runner) usageError(msg string) error {
 	fmt.Fprintln(r.stderr, msg)
 	return ErrUsage
+}
+
+// parseJSONFlag accepts zero args or a single "--json" arg. Returns
+// (returnJSON, ok). Anything else returns ok=false so the caller can emit
+// a usage error.
+func parseJSONFlag(extra []string) (bool, bool) {
+	switch len(extra) {
+	case 0:
+		return false, true
+	case 1:
+		if extra[0] == "--json" {
+			return true, true
+		}
+	}
+	return false, false
 }

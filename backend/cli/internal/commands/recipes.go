@@ -88,7 +88,7 @@ func stripPhotoContents(rec *types.Recipe) {
 	}
 }
 
-func (r Runner) cmdCreate(ctx context.Context, repo RecipeRepo, path string) error {
+func (r Runner) cmdCreate(ctx context.Context, repo RecipeRepo, path string, returnJSON bool) error {
 	var in recipeInput
 	if err := r.readJSONObject(path, &in); err != nil {
 		return err
@@ -97,6 +97,10 @@ func (r Runner) cmdCreate(ctx context.Context, repo RecipeRepo, path string) err
 	if err != nil {
 		return err
 	}
+	if !returnJSON {
+		fmt.Fprintf(r.stdout, "Successfully created recipe %s\n", id)
+		return nil
+	}
 	created, err := repo.GetRecipe(ctx, id)
 	if err != nil {
 		return err
@@ -104,7 +108,7 @@ func (r Runner) cmdCreate(ctx context.Context, repo RecipeRepo, path string) err
 	return r.writeIndentedJSON(created)
 }
 
-func (r Runner) cmdPatch(ctx context.Context, repo RecipeRepo, id string, path string) error {
+func (r Runner) cmdPatch(ctx context.Context, repo RecipeRepo, id string, path string, returnJSON bool) error {
 	id = strings.TrimSpace(id)
 	var patch recipePatch
 	if err := r.readJSONObject(path, &patch); err != nil {
@@ -121,6 +125,10 @@ func (r Runner) cmdPatch(ctx context.Context, repo RecipeRepo, id string, path s
 	merged.ID = id
 	if err := repo.UpdateRecipe(ctx, merged); err != nil {
 		return err
+	}
+	if !returnJSON {
+		fmt.Fprintf(r.stdout, "Successfully updated recipe %s (fields: %s)\n", id, strings.Join(patch.setFields(), ", "))
+		return nil
 	}
 	updated, err := repo.GetRecipe(ctx, id)
 	if err != nil {

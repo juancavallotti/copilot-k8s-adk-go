@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	types "juancavallotti.com/recipe-types"
 )
@@ -38,6 +39,16 @@ type fakeRepo struct {
 	featuredPhotoID       string
 
 	importedRecipes []types.Recipe
+
+	logTraceCalls    int
+	logTraceEntries  []traceEntry
+	logTraceErr      error
+}
+
+type traceEntry struct {
+	eventID    string
+	occurredAt time.Time
+	data       json.RawMessage
 }
 
 func (f *fakeRepo) GetRecipes(ctx context.Context) ([]types.Recipe, error) {
@@ -111,6 +122,12 @@ func (f *fakeRepo) ImportRecipe(ctx context.Context, recipe types.Recipe) error 
 	return nil
 }
 
+func (f *fakeRepo) LogTrace(ctx context.Context, eventID string, occurredAt time.Time, data json.RawMessage) error {
+	f.logTraceCalls++
+	f.logTraceEntries = append(f.logTraceEntries, traceEntry{eventID: eventID, occurredAt: occurredAt, data: data})
+	return f.logTraceErr
+}
+
 func testRunner(stdin string, repo RecipeRepo, factoryCalls *int) (Runner, *bytes.Buffer, *bytes.Buffer) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -170,7 +187,7 @@ func TestRun_SchemaPrintsValidJSONAndDoesNotOpenRepo(t *testing.T) {
 	}
 }
 
-func TestRun_CreateReadsOneRecipeObjectAndPrintsCreatedRecipe(t *testing.T) {
+func TestRun_CreateReadsOneRecipeObjectAndPrintsSuccessSummary(t *testing.T) {
 	repo := &fakeRepo{}
 	var factoryCalls int
 	r, stdout, _ := testRunner(`{
@@ -197,7 +214,22 @@ func TestRun_CreateReadsOneRecipeObjectAndPrintsCreatedRecipe(t *testing.T) {
 	if repo.createdRecipe.Name != "Pancakes" {
 		t.Fatalf("created name = %q", repo.createdRecipe.Name)
 	}
+	if len(repo.getRecipeCalls) != 0 {
+		t.Fatalf("default create should not re-fetch recipe; got = %v", repo.getRecipeCalls)
+	}
+	if got := stdout.String(); got != "Successfully created recipe created-id\n" {
+		t.Fatalf("stdout = %q", got)
+	}
+}
 
+func TestRun_CreateWithJSONFlagPrintsCreatedRecipe(t *testing.T) {
+	repo := &fakeRepo{}
+	var factoryCalls int
+	r, stdout, _ := testRunner(`{"name":"Pancakes"}`, repo, &factoryCalls)
+
+	if err := r.Run(context.Background(), []string{"create", "-", "--json"}); err != nil {
+		t.Fatalf("Run create --json: %v", err)
+	}
 	var out types.Recipe
 	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
 		t.Fatalf("output is not recipe JSON: %v\n%s", err, stdout.String())
@@ -224,7 +256,7 @@ func TestRun_CreateRejectsUnknownFields(t *testing.T) {
 	}
 }
 
-func TestRun_PatchMergesProvidedFieldsAndPrintsUpdatedRecipe(t *testing.T) {
+func TestRun_PatchMergesProvidedFieldsAndPrintsSuccessSummary(t *testing.T) {
 	repo := &fakeRepo{
 		recipes: []types.Recipe{{
 			ID:           "recipe-1",
@@ -258,6 +290,25 @@ func TestRun_PatchMergesProvidedFieldsAndPrintsUpdatedRecipe(t *testing.T) {
 		t.Fatalf("ingredients = %#v", got)
 	}
 
+	got := stdout.String()
+	if !strings.HasPrefix(got, "Successfully updated recipe recipe-1") {
+		t.Fatalf("stdout = %q, want success summary", got)
+	}
+	if !strings.Contains(got, "name") || !strings.Contains(got, "ingredients") {
+		t.Fatalf("stdout = %q, want changed-field summary", got)
+	}
+}
+
+func TestRun_PatchWithJSONFlagPrintsUpdatedRecipe(t *testing.T) {
+	repo := &fakeRepo{
+		recipes: []types.Recipe{{ID: "recipe-1", Name: "Old", Description: "Keep"}},
+	}
+	var factoryCalls int
+	r, stdout, _ := testRunner(`{"name":"New"}`, repo, &factoryCalls)
+
+	if err := r.Run(context.Background(), []string{"patch", "recipe-1", "-", "--json"}); err != nil {
+		t.Fatalf("Run patch --json: %v", err)
+	}
 	var out types.Recipe
 	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
 		t.Fatalf("output is not recipe JSON: %v\n%s", err, stdout.String())
@@ -281,7 +332,7 @@ func TestRun_PatchRejectsEmptyPatch(t *testing.T) {
 	}
 }
 
-func TestRun_AddPhotoReadsFileAndPrintsUpdatedRecipe(t *testing.T) {
+func TestRun_AddPhotoReadsFileAndPrintsSuccessSummary(t *testing.T) {
 	repo := &fakeRepo{}
 	var factoryCalls int
 	tmp := t.TempDir() + "/photo.bin"
@@ -299,12 +350,11 @@ func TestRun_AddPhotoReadsFileAndPrintsUpdatedRecipe(t *testing.T) {
 	if repo.addedPhoto.ImageBase64 != "aW1n" || !repo.addedPhoto.Featured {
 		t.Fatalf("added photo = %#v", repo.addedPhoto)
 	}
-	var out types.Recipe
-	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
-		t.Fatalf("output is not recipe JSON: %v\n%s", err, stdout.String())
+	if len(repo.getRecipeCalls) != 0 {
+		t.Fatalf("default add-photo should not re-fetch recipe; got = %v", repo.getRecipeCalls)
 	}
-	if out.ID != "recipe-1" || len(out.Photos) != 1 {
-		t.Fatalf("output recipe = %#v", out)
+	if got := stdout.String(); got != "Successfully added photo photo-id to recipe recipe-1 (featured)\n" {
+		t.Fatalf("stdout = %q", got)
 	}
 }
 
@@ -313,14 +363,27 @@ func TestRun_AddPhotoReadsBase64FromStdin(t *testing.T) {
 	var factoryCalls int
 	r, stdout, _ := testRunner(" aW1n\n", repo, &factoryCalls)
 
-	if err := r.Run(context.Background(), []string{"add-photo", " recipe-1 ", "-", "--featured"}); err != nil {
+	if err := r.Run(context.Background(), []string{"add-photo", " recipe-1 ", "-"}); err != nil {
 		t.Fatalf("Run add-photo: %v", err)
 	}
 	if repo.addPhotoCalls != 1 {
 		t.Fatalf("add photo calls = %d, want 1", repo.addPhotoCalls)
 	}
-	if repo.addedPhoto.ImageBase64 != "aW1n" || !repo.addedPhoto.Featured {
+	if repo.addedPhoto.ImageBase64 != "aW1n" || repo.addedPhoto.Featured {
 		t.Fatalf("added photo = %#v", repo.addedPhoto)
+	}
+	if got := stdout.String(); got != "Successfully added photo photo-id to recipe recipe-1\n" {
+		t.Fatalf("stdout = %q", got)
+	}
+}
+
+func TestRun_AddPhotoWithJSONFlagPrintsUpdatedRecipe(t *testing.T) {
+	repo := &fakeRepo{}
+	var factoryCalls int
+	r, stdout, _ := testRunner(" aW1n\n", repo, &factoryCalls)
+
+	if err := r.Run(context.Background(), []string{"add-photo", "recipe-1", "-", "--featured", "--json"}); err != nil {
+		t.Fatalf("Run add-photo --json: %v", err)
 	}
 	var out types.Recipe
 	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
@@ -345,7 +408,7 @@ func TestRun_AddPhotoRejectsInvalidBase64FromStdin(t *testing.T) {
 	}
 }
 
-func TestRun_DeletePhotoRemovesPhotoAndPrintsUpdatedRecipe(t *testing.T) {
+func TestRun_DeletePhotoRemovesPhotoAndPrintsSuccessSummary(t *testing.T) {
 	repo := &fakeRepo{}
 	var factoryCalls int
 	r, stdout, _ := testRunner("", repo, &factoryCalls)
@@ -358,6 +421,22 @@ func TestRun_DeletePhotoRemovesPhotoAndPrintsUpdatedRecipe(t *testing.T) {
 	}
 	if repo.deletedRecipeID != "recipe-1" || repo.deletedPhotoID != "photo-1" {
 		t.Fatalf("deleted recipe/photo = %q/%q", repo.deletedRecipeID, repo.deletedPhotoID)
+	}
+	if len(repo.getRecipeCalls) != 0 {
+		t.Fatalf("default delete-photo should not re-fetch recipe; got = %v", repo.getRecipeCalls)
+	}
+	if got := stdout.String(); got != "Successfully deleted photo photo-1 from recipe recipe-1\n" {
+		t.Fatalf("stdout = %q", got)
+	}
+}
+
+func TestRun_DeletePhotoWithJSONFlagPrintsUpdatedRecipe(t *testing.T) {
+	repo := &fakeRepo{}
+	var factoryCalls int
+	r, stdout, _ := testRunner("", repo, &factoryCalls)
+
+	if err := r.Run(context.Background(), []string{"delete-photo", "recipe-1", "photo-1", "--json"}); err != nil {
+		t.Fatalf("Run delete-photo --json: %v", err)
 	}
 	var out types.Recipe
 	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
@@ -390,7 +469,7 @@ func TestRun_DeleteRemovesRecipe(t *testing.T) {
 	}
 }
 
-func TestRun_SetFeaturedPhotoMarksPhotoAndPrintsUpdatedRecipe(t *testing.T) {
+func TestRun_SetFeaturedPhotoMarksPhotoAndPrintsSuccessSummary(t *testing.T) {
 	repo := &fakeRepo{}
 	var factoryCalls int
 	r, stdout, _ := testRunner("", repo, &factoryCalls)
@@ -403,6 +482,22 @@ func TestRun_SetFeaturedPhotoMarksPhotoAndPrintsUpdatedRecipe(t *testing.T) {
 	}
 	if repo.featuredRecipeID != "recipe-1" || repo.featuredPhotoID != "photo-1" {
 		t.Fatalf("featured recipe/photo = %q/%q", repo.featuredRecipeID, repo.featuredPhotoID)
+	}
+	if len(repo.getRecipeCalls) != 0 {
+		t.Fatalf("default set-featured-photo should not re-fetch recipe; got = %v", repo.getRecipeCalls)
+	}
+	if got := stdout.String(); got != "Successfully set photo photo-1 as featured on recipe recipe-1\n" {
+		t.Fatalf("stdout = %q", got)
+	}
+}
+
+func TestRun_SetFeaturedPhotoWithJSONFlagPrintsUpdatedRecipe(t *testing.T) {
+	repo := &fakeRepo{}
+	var factoryCalls int
+	r, stdout, _ := testRunner("", repo, &factoryCalls)
+
+	if err := r.Run(context.Background(), []string{"set-featured-photo", "recipe-1", "photo-1", "--json"}); err != nil {
+		t.Fatalf("Run set-featured-photo --json: %v", err)
 	}
 	var out types.Recipe
 	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {

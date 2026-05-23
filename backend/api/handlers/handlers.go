@@ -28,4 +28,6 @@ func (h *Handlers) Register(r gin.IRoutes) {
 	r.PUT("/recipes/:id", h.ReplaceRecipe)
 	r.PATCH("/recipes/:id", h.PatchRecipe)
 	r.DELETE("/recipes/:id", h.DeleteRecipe)
+	r.GET("/events", h.ListEvents)
+	r.GET("/events/:event_id/traces", h.ListEventTraces)
 }

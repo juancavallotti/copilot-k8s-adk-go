@@ -12,6 +12,7 @@ import (
 	"juancavallotti.com/recipes-agent/internal/config"
 	"juancavallotti.com/recipes-agent/internal/imagegen"
 	"juancavallotti.com/recipes-agent/internal/instruction"
+	"juancavallotti.com/recipes-agent/internal/observability"
 	"juancavallotti.com/recipes-agent/internal/tools/recipephotos"
 	"juancavallotti.com/recipes-agent/internal/tools/recipescli"
 	"juancavallotti.com/recipes-agent/internal/tools/uiactions"
@@ -37,14 +38,21 @@ func NewWith(ctx context.Context, cfg config.Config, llm model.LLM, imgGen image
 		return nil, fmt.Errorf("load instruction: %w", err)
 	}
 
+	beforeModel, afterModel := observability.ModelCallbacks()
+	beforeTool, afterTool := observability.ToolCallbacks()
+
 	a, err := llmagent.New(llmagent.Config{
 		Name:        AgentName,
 		Model:       llm,
 		Description: "Recipe copilot that manages recipes by calling the installed recipes-cli.",
 		Instruction: instruction,
-		BeforeModelCallbacks: []llmagent.BeforeModelCallback{
-			newContextTrimCallback(),
-		},
+		BeforeModelCallbacks: append(
+			[]llmagent.BeforeModelCallback{newContextTrimCallback()},
+			beforeModel...,
+		),
+		AfterModelCallbacks:  afterModel,
+		BeforeToolCallbacks:  beforeTool,
+		AfterToolCallbacks:   afterTool,
 		Tools: []adktool.Tool{
 			photoTool,
 			cliTool,

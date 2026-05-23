@@ -11,18 +11,28 @@ import (
 	types "juancavallotti.com/recipe-types"
 )
 
-func (r Runner) cmdAddPhoto(ctx context.Context, repo RecipeRepo, recipeID string, path string, featured bool) error {
+func (r Runner) cmdAddPhoto(ctx context.Context, repo RecipeRepo, recipeID string, path string, featured bool, returnJSON bool) error {
+	recipeID = strings.TrimSpace(recipeID)
 	imageBase64, err := r.readPhotoBase64(path)
 	if err != nil {
 		return err
 	}
-	if _, err := repo.AddRecipePhoto(ctx, strings.TrimSpace(recipeID), types.Photo{
+	photoID, err := repo.AddRecipePhoto(ctx, recipeID, types.Photo{
 		ImageBase64: imageBase64,
 		Featured:    featured,
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
-	updated, err := repo.GetRecipe(ctx, strings.TrimSpace(recipeID))
+	if !returnJSON {
+		featuredNote := ""
+		if featured {
+			featuredNote = " (featured)"
+		}
+		fmt.Fprintf(r.stdout, "Successfully added photo %s to recipe %s%s\n", photoID, recipeID, featuredNote)
+		return nil
+	}
+	updated, err := repo.GetRecipe(ctx, recipeID)
 	if err != nil {
 		return err
 	}
@@ -52,10 +62,15 @@ func (r Runner) readPhotoBase64(path string) (string, error) {
 	return imageBase64, nil
 }
 
-func (r Runner) cmdDeletePhoto(ctx context.Context, repo RecipeRepo, recipeID string, photoID string) error {
+func (r Runner) cmdDeletePhoto(ctx context.Context, repo RecipeRepo, recipeID string, photoID string, returnJSON bool) error {
 	recipeID = strings.TrimSpace(recipeID)
-	if err := repo.DeleteRecipePhoto(ctx, recipeID, strings.TrimSpace(photoID)); err != nil {
+	photoID = strings.TrimSpace(photoID)
+	if err := repo.DeleteRecipePhoto(ctx, recipeID, photoID); err != nil {
 		return err
+	}
+	if !returnJSON {
+		fmt.Fprintf(r.stdout, "Successfully deleted photo %s from recipe %s\n", photoID, recipeID)
+		return nil
 	}
 	updated, err := repo.GetRecipe(ctx, recipeID)
 	if err != nil {
@@ -64,10 +79,15 @@ func (r Runner) cmdDeletePhoto(ctx context.Context, repo RecipeRepo, recipeID st
 	return r.writeIndentedJSON(updated)
 }
 
-func (r Runner) cmdSetFeaturedPhoto(ctx context.Context, repo RecipeRepo, recipeID string, photoID string) error {
+func (r Runner) cmdSetFeaturedPhoto(ctx context.Context, repo RecipeRepo, recipeID string, photoID string, returnJSON bool) error {
 	recipeID = strings.TrimSpace(recipeID)
-	if err := repo.SetFeaturedRecipePhoto(ctx, recipeID, strings.TrimSpace(photoID)); err != nil {
+	photoID = strings.TrimSpace(photoID)
+	if err := repo.SetFeaturedRecipePhoto(ctx, recipeID, photoID); err != nil {
 		return err
+	}
+	if !returnJSON {
+		fmt.Fprintf(r.stdout, "Successfully set photo %s as featured on recipe %s\n", photoID, recipeID)
+		return nil
 	}
 	updated, err := repo.GetRecipe(ctx, recipeID)
 	if err != nil {

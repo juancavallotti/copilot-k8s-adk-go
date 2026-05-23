@@ -75,6 +75,8 @@ spec:
               value: {{ .Values.agent.imageGenerationConcurrency | quote }}
             - name: AGENT_IMAGE_OUTPUT_DIR
               value: {{ .Values.agent.imageScratch.mountPath | quote }}
+            - name: AGENT_TRACES_CLI
+              value: /usr/local/bin/recipes-cli
             - name: GEMINI_API_KEY
               valueFrom:
                 secretKeyRef:

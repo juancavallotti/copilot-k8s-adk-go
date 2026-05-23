@@ -1,4 +1,4 @@
-import { BookOpen, ChefHat, CirclePlus } from "lucide-react";
+import { Activity, BookOpen, ChefHat, CirclePlus } from "lucide-react";
 import { useEffect } from "react";
 import { NavLink, Outlet, useLoaderData } from "react-router";
 
@@ -109,7 +109,7 @@ function AppLayoutContents() {
   }, [loaderData, dispatch]);
 
   return (
-    <div className="flex min-h-screen bg-zinc-100 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+    <div className="flex h-screen bg-zinc-100 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <aside className="flex w-56 shrink-0 flex-col border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="border-b border-zinc-200 px-4 py-4 dark:border-zinc-800">
           <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
@@ -148,9 +148,22 @@ function AppLayoutContents() {
               </span>
             )}
           </NavLink>
+          <div className="mt-auto">
+            <NavLink
+              to="/traces"
+              className="group block rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-zinc-900"
+            >
+              {({ isActive }) => (
+                <span className={navClass(isActive)}>
+                  <Activity className={navIconClass(isActive)} aria-hidden />
+                  Traces
+                </span>
+              )}
+            </NavLink>
+          </div>
         </nav>
       </aside>
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="border-b border-zinc-200 bg-white px-6 py-4 dark:border-zinc-800 dark:bg-zinc-900">
           <h1 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Workspace

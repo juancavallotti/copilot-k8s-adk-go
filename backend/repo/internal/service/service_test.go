@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	types "juancavallotti.com/recipe-types"
 
@@ -20,6 +22,19 @@ type fakeStore struct {
 	deletePhotoCalls  int
 	setFeaturedCalls  int
 	deleteCalls       int
+
+	insertTraceCalls    int
+	insertTraceEventID  string
+	insertTraceTime     time.Time
+	insertTraceData     json.RawMessage
+	insertTraceErr      error
+	listEventsCalls     int
+	listEventsLimit     int
+	listEventsOffset    int
+	listEventsResult    []types.Event
+	listTracesCalls     int
+	listTracesEventID   string
+	listTracesResult    []types.Trace
 
 	createErr         error
 	getRecipeNotFound bool
@@ -74,6 +89,27 @@ func (f *fakeStore) SetFeaturedRecipePhoto(ctx context.Context, recipeID string,
 func (f *fakeStore) DeleteRecipe(ctx context.Context, id string) error {
 	f.deleteCalls++
 	return nil
+}
+
+func (f *fakeStore) InsertTrace(ctx context.Context, eventID string, occurredAt time.Time, data json.RawMessage) error {
+	f.insertTraceCalls++
+	f.insertTraceEventID = eventID
+	f.insertTraceTime = occurredAt
+	f.insertTraceData = data
+	return f.insertTraceErr
+}
+
+func (f *fakeStore) ListEvents(ctx context.Context, limit, offset int) ([]types.Event, error) {
+	f.listEventsCalls++
+	f.listEventsLimit = limit
+	f.listEventsOffset = offset
+	return f.listEventsResult, nil
+}
+
+func (f *fakeStore) ListTracesByEvent(ctx context.Context, eventID string) ([]types.Trace, error) {
+	f.listTracesCalls++
+	f.listTracesEventID = eventID
+	return f.listTracesResult, nil
 }
 
 func TestService_GetRecipes_NoValidation(t *testing.T) {

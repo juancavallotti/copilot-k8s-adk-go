@@ -75,6 +75,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS recipes_images_one_featured_idx
     ON recipes_images (recipe_id)
     WHERE is_featured;
 
+CREATE TABLE IF NOT EXISTS events (
+    event_id TEXT PRIMARY KEY,
+    started_at TIMESTAMPTZ NOT NULL,
+    ended_at TIMESTAMPTZ NOT NULL,
+    trace_count INT NOT NULL DEFAULT 0,
+    CONSTRAINT events_event_id_nonempty CHECK (length(trim(event_id)) > 0),
+    CONSTRAINT events_time_order CHECK (ended_at >= started_at)
+);
+
+CREATE INDEX IF NOT EXISTS events_ended_at_idx ON events (ended_at DESC);
+
+CREATE TABLE IF NOT EXISTS traces (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id TEXT NOT NULL REFERENCES events (event_id) ON DELETE CASCADE,
+    occurred_at TIMESTAMPTZ NOT NULL,
+    data JSONB NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS traces_event_id_idx ON traces (event_id);
+CREATE INDEX IF NOT EXISTS traces_event_id_occurred_at_idx ON traces (event_id, occurred_at);
+
 CREATE OR REPLACE FUNCTION recipes_set_updated_at()
 RETURNS TRIGGER
 LANGUAGE plpgsql
