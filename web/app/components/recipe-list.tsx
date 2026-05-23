@@ -1,5 +1,5 @@
 import { ChefHat, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { Link, useFetcher } from "react-router";
 
 import type { Recipe } from "~/lib/recipe-api";
@@ -10,6 +10,8 @@ import { RecipePhotoViewer } from "./recipe-photo-viewer";
 type DeleteRecipeActionResult =
   | { ok: true }
   | { ok: false; error: string };
+
+type RecipeSort = "newest" | "title-asc" | "title-desc";
 
 export type RecipeListProps = {
   recipes: Recipe[];
@@ -41,7 +43,64 @@ export function RecipeList({
   onDeleteErrorDismiss,
 }: RecipeListProps) {
   const fetcher = useFetcher<DeleteRecipeActionResult>();
+  const controlsId = useId();
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [filterText, setFilterText] = useState("");
+  const [mealType, setMealType] = useState("");
+  const [sortBy, setSortBy] = useState<RecipeSort>("newest");
+
+  const mealTypes = useMemo(() => {
+    const byNormalizedName = new Map<string, string>();
+    for (const recipe of recipes) {
+      const trimmed = recipe.category.trim();
+      if (trimmed === "") continue;
+      const key = trimmed.toLocaleLowerCase();
+      if (!byNormalizedName.has(key)) {
+        byNormalizedName.set(key, trimmed);
+      }
+    }
+    return Array.from(byNormalizedName.values()).sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" }),
+    );
+  }, [recipes]);
+
+  const visibleRecipes = useMemo(() => {
+    const normalizedFilter = filterText.trim().toLocaleLowerCase();
+    const normalizedMealType = mealType.trim().toLocaleLowerCase();
+
+    const filtered = recipes.filter((recipe) => {
+      const matchesMealType =
+        normalizedMealType === "" ||
+        recipe.category.trim().toLocaleLowerCase() === normalizedMealType;
+
+      if (!matchesMealType) return false;
+      if (normalizedFilter === "") return true;
+
+      const searchableText = [
+        recipe.name,
+        recipe.description,
+        recipe.category,
+        ...recipe.ingredients,
+      ]
+        .join(" ")
+        .toLocaleLowerCase();
+      return searchableText.includes(normalizedFilter);
+    });
+
+    if (sortBy === "newest") {
+      return filtered;
+    }
+
+    return [...filtered].sort((a, b) => {
+      const result = a.name.localeCompare(b.name, undefined, {
+        sensitivity: "base",
+        numeric: true,
+      });
+      return sortBy === "title-asc" ? result : -result;
+    });
+  }, [filterText, mealType, recipes, sortBy]);
+
+  const hasActiveFilters = filterText.trim() !== "" || mealType !== "";
 
   useEffect(() => {
     if (fetcher.state !== "idle" || fetcher.data == null) return;
@@ -63,6 +122,82 @@ export function RecipeList({
 
   return (
     <div className="mt-8 flex flex-col gap-3">
+      <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem_10rem]">
+          <div className="space-y-1.5">
+            <label
+              htmlFor={`${controlsId}-filter`}
+              className="text-xs font-medium text-zinc-600 dark:text-zinc-300"
+            >
+              Filter recipes
+            </label>
+            <input
+              id={`${controlsId}-filter`}
+              type="search"
+              value={filterText}
+              onChange={(e) => setFilterText(e.currentTarget.value)}
+              placeholder="Search title, description, or ingredients"
+              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition-colors placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label
+              htmlFor={`${controlsId}-meal-type`}
+              className="text-xs font-medium text-zinc-600 dark:text-zinc-300"
+            >
+              Meal type
+            </label>
+            <select
+              id={`${controlsId}-meal-type`}
+              value={mealType}
+              onChange={(e) => setMealType(e.currentTarget.value)}
+              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
+            >
+              <option value="">All meal types</option>
+              {mealTypes.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label
+              htmlFor={`${controlsId}-sort`}
+              className="text-xs font-medium text-zinc-600 dark:text-zinc-300"
+            >
+              Sort
+            </label>
+            <select
+              id={`${controlsId}-sort`}
+              value={sortBy}
+              onChange={(e) => setSortBy(e.currentTarget.value as RecipeSort)}
+              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
+            >
+              <option value="newest">Newest first</option>
+              <option value="title-asc">Title A-Z</option>
+              <option value="title-desc">Title Z-A</option>
+            </select>
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+          <span>
+            Showing {visibleRecipes.length} of {recipes.length} recipes
+          </span>
+          {hasActiveFilters ? (
+            <button
+              type="button"
+              className="font-medium text-zinc-700 underline-offset-2 hover:underline dark:text-zinc-200"
+              onClick={() => {
+                setFilterText("");
+                setMealType("");
+              }}
+            >
+              Clear filters
+            </button>
+          ) : null}
+        </div>
+      </div>
       {deleteError ? (
         <div
           className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200"
@@ -78,8 +213,15 @@ export function RecipeList({
           </button>
         </div>
       ) : null}
+      {visibleRecipes.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50/80 p-8 text-center dark:border-zinc-700 dark:bg-zinc-900/40">
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            No recipes match those filters.
+          </p>
+        </div>
+      ) : null}
       <ul className="flex flex-col gap-3">
-        {recipes.map((recipe) => {
+        {visibleRecipes.map((recipe) => {
           const isConfirming = confirmingId === recipe.id;
           const isDeleting = deletingId === recipe.id;
           const displayPhotos = getRecipeDisplayPhotos(recipe);
