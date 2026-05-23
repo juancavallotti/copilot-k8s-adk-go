@@ -139,38 +139,31 @@ Runtime image repositories and tags live in `helm/values.yaml`. DevSpace overrid
 
 ## Release Process
 
-Releases are managed with [release-please](https://github.com/googleapis/release-please). The workflow is manual-only and lives at `.github/workflows/release-please.yml`.
+Releases are managed with [release-please](https://github.com/googleapis/release-please). The workflow lives at `.github/workflows/release-please.yml` and runs when changes land on `main`; it can also be started manually.
 
-Before releasing, make sure the GitHub repository has these secrets:
+If you want CI workflows to run on release-please PRs, add a `RELEASE_PLEASE_TOKEN` secret with a personal access token. Without it, the workflow falls back to `GITHUB_TOKEN`, which can open the PR but does not trigger other workflows from that PR.
 
-- `DOCKERHUB_USERNAME`
-- `DOCKERHUB_TOKEN`
-
-Use Conventional Commit messages for changes that should appear in release notes:
+Use Conventional Commit messages for changes that should appear in the release PR and changelog:
 
 - `fix: ...` creates a patch release.
 - `feat: ...` creates a minor release.
 - `feat!: ...` or a `BREAKING CHANGE:` footer creates a major release.
+- `deps: ...`, `perf: ...`, `revert: ...`, `chore: ...`, and `refactor: ...` are included in the changelog sections configured in `release-please-config.json`.
+- `docs: ...`, `style: ...`, `test: ...`, `build: ...`, and `ci: ...` are tracked but hidden from the changelog.
 
-To release:
+The release PR title pattern is:
 
-1. Push your changes to `main`.
-2. Open GitHub Actions.
-3. Select the `release-please` workflow.
-4. Click `Run workflow`.
-5. Review and merge the release PR that release-please opens.
-6. Run the `release-please` workflow manually again.
-
-On the second run, release-please creates the GitHub release. The workflow then logs in to Docker Hub and runs:
-
-```bash
-task release:images
+```text
+chore${scope}: release${component} ${version}
 ```
 
-That builds and pushes all four runtime images with both the release version and `latest`.
+For the main branch and `recipes` component, that produces titles like `chore(main): release recipes v0.3.0`.
+
+To cut a release, push Conventional Commit changes to `main` or run the workflow manually, then review and merge the release PR that release-please opens. The PR updates `CHANGELOG.md`, `.release-please-manifest.json`, and `helm/Chart.yaml`. After the release PR merges, the workflow runs again on `main` and creates the GitHub release/tag.
 
 ## Notes
 
 - Release-please tracks the last released version in `.release-please-manifest.json` and updates `helm/Chart.yaml` in release PRs.
 - The root release-please package uses the Go strategy for changelog generation and treats `helm/Chart.yaml` as an extra release file.
+- The workflow creates release PRs and GitHub releases/tags. It does not publish container images; run `task release:images` when images should be pushed for a release.
 - Local DevSpace image builds intentionally skip pushing images.
