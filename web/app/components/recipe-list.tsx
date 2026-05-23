@@ -1,17 +1,20 @@
 import { ChefHat, Trash2 } from "lucide-react";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo } from "react";
 import { Link, useFetcher } from "react-router";
 
 import type { Recipe } from "~/lib/recipe-api";
 import { getRecipeDisplayPhotos } from "~/lib/recipe-photos";
+import {
+  RecipeListProvider,
+  useRecipeListState,
+} from "~/state/recipe-list/context";
+import {
+  RecipeListActionType,
+  type RecipeListDeleteResult,
+  type RecipeSort,
+} from "~/state/recipe-list/types";
 import { MarkdownView } from "./markdown-view";
 import { RecipePhotoViewer } from "./recipe-photo-viewer";
-
-type DeleteRecipeActionResult =
-  | { ok: true }
-  | { ok: false; error: string };
-
-type RecipeSort = "newest" | "title-asc" | "title-desc";
 
 export type RecipeListProps = {
   recipes: Recipe[];
@@ -33,7 +36,7 @@ function formatDate(iso: string): string {
   });
 }
 
-export function RecipeList({
+function RecipeListContent({
   recipes,
   deletingId,
   deleteError,
@@ -42,12 +45,17 @@ export function RecipeList({
   onDeleteFailure,
   onDeleteErrorDismiss,
 }: RecipeListProps) {
-  const fetcher = useFetcher<DeleteRecipeActionResult>();
+  const fetcher = useFetcher<RecipeListDeleteResult>();
   const controlsId = useId();
-  const [confirmingId, setConfirmingId] = useState<string | null>(null);
-  const [filterText, setFilterText] = useState("");
-  const [mealType, setMealType] = useState("");
-  const [sortBy, setSortBy] = useState<RecipeSort>("newest");
+  const { state, dispatch } = useRecipeListState();
+  const {
+    confirmingId,
+    filterText,
+    handledDeleteResult,
+    mealType,
+    sortBy,
+    submittedDeleteId,
+  } = state;
 
   const mealTypes = useMemo(() => {
     const byNormalizedName = new Map<string, string>();
@@ -104,20 +112,24 @@ export function RecipeList({
 
   useEffect(() => {
     if (fetcher.state !== "idle" || fetcher.data == null) return;
-    const formData = fetcher.formData as FormData | undefined;
-    const submittedId = formData?.get("id");
-    if (typeof submittedId !== "string") return;
+    if (fetcher.data === handledDeleteResult) return;
+    if (submittedDeleteId == null) return;
     if (fetcher.data.ok === true) {
-      onDeleteSuccess(submittedId);
+      onDeleteSuccess(submittedDeleteId);
     } else {
       onDeleteFailure(fetcher.data.error);
     }
+    dispatch({
+      type: RecipeListActionType.DELETE_FINISHED,
+      data: fetcher.data,
+    });
   }, [
     fetcher.state,
     fetcher.data,
-    fetcher.formData,
+    handledDeleteResult,
     onDeleteFailure,
     onDeleteSuccess,
+    submittedDeleteId,
   ]);
 
   return (
@@ -135,7 +147,12 @@ export function RecipeList({
               id={`${controlsId}-filter`}
               type="search"
               value={filterText}
-              onChange={(e) => setFilterText(e.currentTarget.value)}
+              onChange={(e) =>
+                dispatch({
+                  type: RecipeListActionType.SET_FILTER_TEXT,
+                  data: e.currentTarget.value,
+                })
+              }
               placeholder="Search title, description, or ingredients"
               className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition-colors placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
             />
@@ -150,7 +167,12 @@ export function RecipeList({
             <select
               id={`${controlsId}-meal-type`}
               value={mealType}
-              onChange={(e) => setMealType(e.currentTarget.value)}
+              onChange={(e) =>
+                dispatch({
+                  type: RecipeListActionType.SET_MEAL_TYPE,
+                  data: e.currentTarget.value,
+                })
+              }
               className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
             >
               <option value="">All meal types</option>
@@ -171,7 +193,12 @@ export function RecipeList({
             <select
               id={`${controlsId}-sort`}
               value={sortBy}
-              onChange={(e) => setSortBy(e.currentTarget.value as RecipeSort)}
+              onChange={(e) =>
+                dispatch({
+                  type: RecipeListActionType.SET_SORT_BY,
+                  data: e.currentTarget.value as RecipeSort,
+                })
+              }
               className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
             >
               <option value="newest">Newest first</option>
@@ -188,10 +215,9 @@ export function RecipeList({
             <button
               type="button"
               className="font-medium text-zinc-700 underline-offset-2 hover:underline dark:text-zinc-200"
-              onClick={() => {
-                setFilterText("");
-                setMealType("");
-              }}
+              onClick={() =>
+                dispatch({ type: RecipeListActionType.CLEAR_FILTERS })
+              }
             >
               Clear filters
             </button>
@@ -287,7 +313,10 @@ export function RecipeList({
                     method="post"
                     className="flex flex-1 flex-col justify-center gap-2 px-3 py-3"
                     onSubmit={() => {
-                      setConfirmingId(null);
+                      dispatch({
+                        type: RecipeListActionType.SUBMIT_DELETE,
+                        data: recipe.id,
+                      });
                       onDeleteStart(recipe.id);
                     }}
                   >
@@ -300,7 +329,12 @@ export function RecipeList({
                       <button
                         type="button"
                         className="rounded-md px-2 py-1 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-                        onClick={() => setConfirmingId(null)}
+                        onClick={() =>
+                          dispatch({
+                            type: RecipeListActionType.SET_CONFIRMING_ID,
+                            data: null,
+                          })
+                        }
                         disabled={deletingId !== null}
                       >
                         Cancel
@@ -320,7 +354,12 @@ export function RecipeList({
                     className="flex flex-1 items-center justify-center px-3 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-700 disabled:pointer-events-none disabled:opacity-40 dark:hover:bg-red-950/40 dark:hover:text-red-300"
                     aria-label={`Delete ${recipe.name}`}
                     disabled={deletingId !== null}
-                    onClick={() => setConfirmingId(recipe.id)}
+                    onClick={() =>
+                      dispatch({
+                        type: RecipeListActionType.SET_CONFIRMING_ID,
+                        data: recipe.id,
+                      })
+                    }
                   >
                     {isDeleting ? (
                       <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
@@ -337,5 +376,13 @@ export function RecipeList({
         })}
       </ul>
     </div>
+  );
+}
+
+export function RecipeList(props: RecipeListProps) {
+  return (
+    <RecipeListProvider>
+      <RecipeListContent {...props} />
+    </RecipeListProvider>
   );
 }
