@@ -1,20 +1,28 @@
 import {
+  AlertCircle,
   Bot,
+  CheckCircle2,
   ImageIcon,
   Loader2,
   MessageCircle,
   RotateCcw,
   Send,
   Sparkles,
+  Wrench,
   X,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate, useRevalidator } from "react-router";
 import {
+  applyToolResponse,
+  extractToolEventsFromEvent,
   extractUIActionsFromEvent,
+  isInternalToolName,
+  makePendingToolCall,
   parseAssistantResponse,
   uniqueUIActions,
+  type ToolCall,
   type UIAction,
 } from "~/lib/agent-ui-actions";
 import { ModelDropdown } from "~/components/model-dropdown";
@@ -63,6 +71,7 @@ type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   uiActions?: UIAction[];
+  toolCalls?: ToolCall[];
   rawDebug?: string;
 };
 
@@ -167,6 +176,11 @@ function extractText(event: AgentEvent): string {
   );
 }
 
+type ToolEventBatch = {
+  calls: Array<{ id: string; name: string; args?: Record<string, unknown> }>;
+  responses: Array<{ id: string; name: string; response: unknown }>;
+};
+
 type BubbleStreamHandlers = {
   onProgress: (text: string, uiActions: UIAction[]) => void;
   onBubbleFinish: (
@@ -174,6 +188,7 @@ type BubbleStreamHandlers = {
     uiActions: UIAction[],
     rawEvents: string[],
   ) => void;
+  onToolEvents: (events: ToolEventBatch) => void;
 };
 
 async function readAgentStream(
@@ -225,6 +240,15 @@ async function readAgentStream(
         ...eventUIActions,
       ]);
       bubbleHasContent = true;
+    }
+    const toolEvents = extractToolEventsFromEvent(event);
+    // Tool events are managed by the caller (assigned to the bubble that
+    // created the call, then updated in place when the response arrives).
+    // They do not flip bubbleHasContent: a functionCall often carries
+    // turnComplete=true, and finalizing on that would split the bubble
+    // before the assistant's text response arrives.
+    if (toolEvents.calls.length > 0 || toolEvents.responses.length > 0) {
+      handlers.onToolEvents(toolEvents);
     }
     const text = extractText(event);
     if (text !== "") {
@@ -320,6 +344,39 @@ function buildAgentMessage(userMessage: string, appContext: AppContext): string 
     },
     null,
     2,
+  );
+}
+
+function describeToolCall(call: ToolCall): string {
+  if (call.summary != null && call.summary !== "") return call.summary;
+  return call.name;
+}
+
+function ToolCallChip({ call }: { call: ToolCall }) {
+  const label = describeToolCall(call);
+  const styles =
+    call.status === "error"
+      ? "bg-red-50 text-red-800 dark:bg-red-950/60 dark:text-red-200"
+      : call.status === "pending"
+        ? "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+        : "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200";
+  const icon =
+    call.status === "error" ? (
+      <AlertCircle className="size-3" aria-hidden />
+    ) : call.status === "pending" ? (
+      <Loader2 className="size-3 animate-spin" aria-hidden />
+    ) : (
+      <CheckCircle2 className="size-3" aria-hidden />
+    );
+  return (
+    <span
+      title={`${call.name}${call.summary ? ` — ${call.summary}` : ""}`}
+      className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[0.6875rem] font-medium ${styles}`}
+    >
+      <Wrench className="size-3 shrink-0 opacity-60" aria-hidden />
+      {icon}
+      <span className="truncate font-mono">{label}</span>
+    </span>
   );
 }
 
@@ -562,6 +619,22 @@ export function AgentChat() {
     setError(null);
     setIsSending(true);
     let pendingNextBubble = false;
+    // Tool call ids → the bubble (message id) that owns them. Each call
+    // is created in exactly one bubble, and its response updates that
+    // same bubble's chip in place — even if the response arrives in a
+    // later bubble.
+    const toolCallOwners = new Map<string, string>();
+
+    function ensureCurrentBubble() {
+      if (!pendingNextBubble) return;
+      currentAssistantID = randomID("assistant");
+      const newID = currentAssistantID;
+      setMessages((current) => [
+        ...current,
+        { id: newID, role: "assistant", content: "" },
+      ]);
+      pendingNextBubble = false;
+    }
 
     try {
       await ensureSession(baseURL, userID, sessionID);
@@ -578,15 +651,7 @@ export function AgentChat() {
 
       await readAgentStream(res, {
         onProgress: (chunk, streamUIActions) => {
-          if (pendingNextBubble) {
-            currentAssistantID = randomID("assistant");
-            const newID = currentAssistantID;
-            setMessages((current) => [
-              ...current,
-              { id: newID, role: "assistant", content: "" },
-            ]);
-            pendingNextBubble = false;
-          }
+          ensureCurrentBubble();
           const id = currentAssistantID;
           const parsed = parseAssistantResponse(chunk);
           setMessages((current) =>
@@ -597,6 +662,42 @@ export function AgentChat() {
               uniqueUIActions([...streamUIActions, ...parsed.uiActions]),
             ),
           );
+        },
+        onToolEvents: (toolEvents) => {
+          for (const call of toolEvents.calls) {
+            if (isInternalToolName(call.name)) continue;
+            if (toolCallOwners.has(call.id)) continue;
+            ensureCurrentBubble();
+            const ownerId = currentAssistantID;
+            toolCallOwners.set(call.id, ownerId);
+            const newCall = makePendingToolCall(call);
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === ownerId
+                  ? {
+                      ...message,
+                      toolCalls: [...(message.toolCalls ?? []), newCall],
+                    }
+                  : message,
+              ),
+            );
+          }
+          for (const response of toolEvents.responses) {
+            if (isInternalToolName(response.name)) continue;
+            const ownerId = toolCallOwners.get(response.id);
+            if (ownerId == null) continue;
+            setMessages((current) =>
+              current.map((message) => {
+                if (message.id !== ownerId) return message;
+                const toolCalls = (message.toolCalls ?? []).map((tc) =>
+                  tc.id === response.id
+                    ? applyToolResponse(tc, response.response)
+                    : tc,
+                );
+                return { ...message, toolCalls };
+              }),
+            );
+          }
         },
         onBubbleFinish: (chunk, streamUIActions, rawEvents) => {
           const id = currentAssistantID;
@@ -609,7 +710,12 @@ export function AgentChat() {
           setMessages((current) =>
             current.map((message) =>
               message.id === id
-                ? { ...message, content: parsed.content, uiActions, rawDebug }
+                ? {
+                    ...message,
+                    content: parsed.content,
+                    uiActions,
+                    rawDebug,
+                  }
                 : message,
             ),
           );
@@ -723,13 +829,31 @@ export function AgentChat() {
                       : "border border-zinc-200 bg-white text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100",
                   ].join(" ")}
                 >
-                  {message.content === "" ? (
-                    <span className="text-zinc-500 dark:text-zinc-400">
-                      Thinking...
-                    </span>
-                  ) : message.role === "assistant" ? (
+                  {message.role === "assistant" ? (
                     <div className="space-y-2">
-                      <MarkdownMessage content={message.content} />
+                      {message.content === "" &&
+                      (message.toolCalls == null ||
+                        message.toolCalls.length === 0) ? (
+                        <span className="text-zinc-500 dark:text-zinc-400">
+                          Thinking...
+                        </span>
+                      ) : message.content !== "" ? (
+                        <MarkdownMessage content={message.content} />
+                      ) : null}
+                      {message.toolCalls != null && message.toolCalls.length > 0 ? (
+                        <div
+                          className={[
+                            "flex flex-wrap gap-1.5",
+                            message.content !== ""
+                              ? "border-t border-zinc-100 pt-2 dark:border-zinc-800"
+                              : "",
+                          ].join(" ")}
+                        >
+                          {message.toolCalls.map((call) => (
+                            <ToolCallChip key={call.id} call={call} />
+                          ))}
+                        </div>
+                      ) : null}
                       {message.uiActions != null && message.uiActions.length > 0 ? (
                         <div className="flex flex-wrap gap-1.5 border-t border-zinc-100 pt-2 dark:border-zinc-800">
                           {message.uiActions.map((action, index) => (
@@ -743,6 +867,10 @@ export function AgentChat() {
                         </div>
                       ) : null}
                     </div>
+                  ) : message.content === "" ? (
+                    <span className="text-zinc-500 dark:text-zinc-400">
+                      Thinking...
+                    </span>
                   ) : (
                     <p className="whitespace-pre-wrap">{message.content}</p>
                   )}

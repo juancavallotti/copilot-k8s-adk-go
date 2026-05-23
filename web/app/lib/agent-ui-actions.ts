@@ -3,6 +3,17 @@ export type UIAction =
   | { type: "navigate_recipe_list" }
   | { type: "refresh_current_screen" };
 
+export type ToolCallStatus = "pending" | "success" | "error";
+
+export type ToolCall = {
+  id: string;
+  name: string;
+  args?: Record<string, unknown>;
+  response?: unknown;
+  status: ToolCallStatus;
+  summary?: string;
+};
+
 export type ParsedAssistantResponse = {
   content: string;
   uiActions: UIAction[];
@@ -83,6 +94,83 @@ export function extractUIActionsFromEvent(event: AgentEventWithParts): UIAction[
   );
 }
 
+export function extractToolEventsFromEvent(event: AgentEventWithParts): {
+  calls: Array<{ id: string; name: string; args?: Record<string, unknown> }>;
+  responses: Array<{ id: string; name: string; response: unknown }>;
+} {
+  const parts = event.content?.parts ?? [];
+  const calls: Array<{ id: string; name: string; args?: Record<string, unknown> }> = [];
+  const responses: Array<{ id: string; name: string; response: unknown }> = [];
+  for (const part of parts) {
+    if (part == null || typeof part !== "object") continue;
+    const call = getRecord(part, "functionCall", "function_call");
+    if (call != null) {
+      const id = getString(call, "id");
+      const name = getString(call, "name");
+      if (id != null && name != null) {
+        const args = getRecord(call, "args");
+        calls.push({ id, name, args });
+      }
+    }
+    const response = getRecord(part, "functionResponse", "function_response");
+    if (response != null) {
+      const id = getString(response, "id");
+      const name = getString(response, "name");
+      if (id != null && name != null) {
+        responses.push({ id, name, response: response.response });
+      }
+    }
+  }
+  return { calls, responses };
+}
+
+export function isInternalToolName(name: string): boolean {
+  return name === uiActionsToolName;
+}
+
+export function makePendingToolCall(call: {
+  id: string;
+  name: string;
+  args?: Record<string, unknown>;
+}): ToolCall {
+  return {
+    id: call.id,
+    name: call.name,
+    args: call.args,
+    status: "pending",
+    summary: summarizeToolCall(call.name, call.args),
+  };
+}
+
+export function applyToolResponse(toolCall: ToolCall, response: unknown): ToolCall {
+  return {
+    ...toolCall,
+    response,
+    status: inferStatus(response),
+  };
+}
+
+function summarizeToolCall(
+  _name: string,
+  args: Record<string, unknown> | undefined,
+): string | undefined {
+  if (args == null) return undefined;
+  const command = args.command;
+  if (typeof command === "string" && command !== "") return command;
+  const query = args.query;
+  if (typeof query === "string" && query !== "") return query;
+  return undefined;
+}
+
+function inferStatus(response: unknown): ToolCallStatus {
+  if (response == null || typeof response !== "object") return "success";
+  const record = response as Record<string, unknown>;
+  if (record.successful === false) return "error";
+  if (typeof record.exitCode === "number" && record.exitCode !== 0) return "error";
+  if (typeof record.error === "string" && record.error !== "") return "error";
+  return "success";
+}
+
 export function uniqueUIActions(actions: UIAction[]): UIAction[] {
   const seen = new Set<string>();
   return actions.filter((action) => {
@@ -113,5 +201,5 @@ function getRecord(
 
 function getString(value: Record<string, unknown>, key: string): string | undefined {
   const child = value[key];
-  return typeof child === "string" ? child : undefined;
+  return typeof child === "string" && child !== "" ? child : undefined;
 }
