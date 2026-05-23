@@ -57,6 +57,12 @@ tasks:
       - docker push {{.IMAGE_AGENT}}:{{.TAG}}
       - docker push {{.IMAGE_WEB}}:{{.TAG}}
 
+  publish:ttlsh:
+    desc: Push all images to ttl.sh (ephemeral OCI registry) and write dist/values.ttlsh.yaml
+    deps: [build:images]
+    cmds:
+      - ./scripts/ttlsh-publish.sh
+
   release:images:
     desc: Build and push all images tagged {{.VERSION}} and latest (version from helm/Chart.yaml)
     deps: [build:images:release]
