@@ -54,10 +54,14 @@ DB_USER="${DB_USER:-postgres}"
 DB_PASSWORD="${DB_PASSWORD:-postgres}"
 DB_NAME="${DB_NAME:-recipes}"
 GEMINI_API_KEY="${GEMINI_API_KEY:-}"
+OPENAI_API_KEY="${OPENAI_API_KEY:-}"
+ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
 
 if [ -z "$GEMINI_API_KEY" ]; then
   echo "warning: GEMINI_API_KEY not set in agent/.env — agent will fail to start in-cluster." >&2
 fi
+[ -n "$OPENAI_API_KEY" ]    && echo "==> Including OPENAI_API_KEY in generated secret"
+[ -n "$ANTHROPIC_API_KEY" ] && echo "==> Including ANTHROPIC_API_KEY in generated secret"
 
 # Pairs of local image name + helm values key. Kept as parallel scalars so the
 # script runs on bash 3.2 (macOS default) without needing associative arrays.
@@ -128,6 +132,10 @@ agent:
   geminiApiKeySecret:
     create: true
     value: "$(yaml_escape "$GEMINI_API_KEY")"
+  openaiApiKeySecret:
+    value: "$(yaml_escape "$OPENAI_API_KEY")"
+  anthropicApiKeySecret:
+    value: "$(yaml_escape "$ANTHROPIC_API_KEY")"
 web:
   image:
     repository: ${WEB_REPO}
