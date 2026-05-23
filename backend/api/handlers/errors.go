@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -27,6 +28,11 @@ func writeRepoErr(c *gin.Context, err error) {
 		errors.Is(err, repo.ErrInvalidSkillContent):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	default:
+		slog.ErrorContext(c.Request.Context(), "api.repo_error",
+			"method", c.Request.Method,
+			"path", c.Request.URL.Path,
+			"err", err,
+		)
 		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 	}

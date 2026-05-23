@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 
@@ -117,11 +118,14 @@ func NewRepo() (*Repo, error) {
 	dbPassword := os.Getenv("DB_PASSWORD")
 	dbName := os.Getenv("DB_NAME")
 
+	slog.Info("repo.opening", "host", dbHost, "port", dbPort, "database", dbName, "user", dbUser)
 	pool, err := sql.Open("postgres", fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", dbHost, dbPort, dbUser, dbPassword, dbName))
 	if err != nil {
+		slog.Error("repo.open_failed", "host", dbHost, "port", dbPort, "database", dbName, "user", dbUser, "err", err)
 		return nil, err
 	}
 
+	slog.Info("repo.initialized", "database", dbName)
 	return &Repo{
 		recipes: recipesvc.NewService(recipeops.NewStore(pool)),
 		traces:  tracesvc.NewService(traceops.NewStore(pool)),

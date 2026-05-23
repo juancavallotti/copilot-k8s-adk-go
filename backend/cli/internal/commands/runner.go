@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"time"
 
 	types "juancavallotti.com/recipe-types"
@@ -49,16 +50,32 @@ type Runner struct {
 	stdin       io.Reader
 	stdout      io.Writer
 	stderr      io.Writer
+	logger      *slog.Logger
 	repoFactory RepoFactory
 }
 
 func NewRunner(stdin io.Reader, stdout io.Writer, stderr io.Writer, repoFactory RepoFactory) Runner {
+	return NewRunnerWithLogger(stdin, stdout, stderr, slog.New(slog.NewJSONHandler(stderr, nil)), repoFactory)
+}
+
+func NewRunnerWithLogger(stdin io.Reader, stdout io.Writer, stderr io.Writer, logger *slog.Logger, repoFactory RepoFactory) Runner {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return Runner{
 		stdin:       stdin,
 		stdout:      stdout,
 		stderr:      stderr,
+		logger:      logger,
 		repoFactory: repoFactory,
 	}
+}
+
+func (r Runner) log() *slog.Logger {
+	if r.logger != nil {
+		return r.logger
+	}
+	return slog.Default()
 }
 
 func (r Runner) Run(ctx context.Context, args []string) error {

@@ -34,7 +34,9 @@ func TestRun_LogTraceInsertsRowFromStdin(t *testing.T) {
 	if string(got.data) != line {
 		t.Fatalf("data = %s, want %s", got.data, line)
 	}
-	if !strings.Contains(stderr.String(), "inserted=1 skipped=0") {
+	if !strings.Contains(stderr.String(), `"msg":"log-trace.summary"`) ||
+		!strings.Contains(stderr.String(), `"inserted":1`) ||
+		!strings.Contains(stderr.String(), `"skipped":0`) {
 		t.Fatalf("stderr = %q", stderr.String())
 	}
 }
@@ -76,8 +78,10 @@ func TestRun_LogTraceSkipsLinesMissingFields(t *testing.T) {
 	if repo.logTraceEntries[0].eventID != "inv-xyz" {
 		t.Fatalf("eventID = %q", repo.logTraceEntries[0].eventID)
 	}
-	if !strings.Contains(stderr.String(), "inserted=1 skipped=4") {
-		t.Fatalf("stderr = %q, want inserted=1 skipped=4", stderr.String())
+	if !strings.Contains(stderr.String(), `"msg":"log-trace.summary"`) ||
+		!strings.Contains(stderr.String(), `"inserted":1`) ||
+		!strings.Contains(stderr.String(), `"skipped":4`) {
+		t.Fatalf("stderr = %q, want structured summary with inserted=1 skipped=4", stderr.String())
 	}
 }
 
