@@ -1,100 +1,53 @@
 import {
-  AlertCircle,
   Bot,
-  CheckCircle2,
   ImageIcon,
   Loader2,
   MessageCircle,
   RotateCcw,
   Send,
   Sparkles,
-  Wrench,
   X,
 } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useRevalidator } from "react-router";
+
+import { ModelDropdown } from "~/components/model-dropdown";
+import { BubbleRow, type BubbleMessage } from "~/components/agent-chat/bubble-row";
+import { DebugDialog } from "~/components/agent-chat/debug-dialog";
+import { ToolCallDialog } from "~/components/agent-chat/tool-call-dialog";
+import { getAgentBaseURL } from "~/lib/agent-base-url";
 import {
-  applyToolResponse,
-  extractToolEventsFromEvent,
-  extractUIActionsFromEvent,
   isInternalToolName,
-  makePendingToolCall,
   parseAssistantResponse,
   uniqueUIActions,
-  type ToolCall,
   type UIAction,
 } from "~/lib/agent-ui-actions";
-import { ModelDropdown } from "~/components/model-dropdown";
-import { getAgentBaseURL } from "~/lib/agent-base-url";
-import { useAgentPreferencesState } from "~/state/agent-preferences/context";
 import {
-  AgentPreferencesActionType,
-  type ProvidersResponse,
-} from "~/state/agent-preferences/types";
+  agentAppName,
+  buildModelContext,
+  ensureSession,
+  getSessionID,
+  getUserID,
+  randomID,
+  saveSavedPrefs,
+  startNewSession,
+} from "~/lib/agent-session";
+import {
+  buildAgentMessage,
+  getAppContext,
+  getHighlightedText,
+} from "~/lib/app-context";
+import { readAgentStream } from "~/lib/agent-stream";
+import {
+  ToolContextProvider,
+  createToolContextStore,
+  useToolCall,
+  type ToolContextStore,
+} from "~/lib/tool-context";
+import { useAgentPreferencesState } from "~/state/agent-preferences/context";
+import { AgentPreferencesActionType } from "~/state/agent-preferences/types";
 
-const agentAppName = "recipe_copilot";
-const modelPrefsStorageKey = "recipes-agent-model-prefs";
-
-// Session ID lives in memory only — reloading the page generates a fresh
-// session so the agent does not carry over context from a prior visit.
-let currentSessionID: string | null = null;
-
-function saveSavedPrefs(prefs: { agentModel: string | null; imageModel: string | null }) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(modelPrefsStorageKey, JSON.stringify(prefs));
-  } catch {
-    // ignore quota / disabled storage
-  }
-}
-
-function buildModelContext(prefs: {
-  options: ProvidersResponse | null;
-  agentModel: string | null;
-  imageModel: string | null;
-}): { agentModel: string; imageModel: string } | null {
-  if (prefs.options == null || prefs.agentModel == null || prefs.imageModel == null) {
-    return null;
-  }
-  if (
-    prefs.agentModel === prefs.options.defaultAgentModel &&
-    prefs.imageModel === prefs.options.defaultImageModel
-  ) {
-    return null;
-  }
-  return { agentModel: prefs.agentModel, imageModel: prefs.imageModel };
-}
-
-type ChatMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  uiActions?: UIAction[];
-  toolCalls?: ToolCall[];
-  rawDebug?: string;
-};
-
-type AppContext = {
-  screen: "recipe_list" | "specific_recipe" | "create_recipe" | "other";
-  path: string;
-  recipeId?: string;
-  highlightedText?: string;
-};
-
-type AgentEvent = {
-  author?: string;
-  partial?: boolean;
-  turnComplete?: boolean;
-  errorMessage?: string;
-  content?: {
-    parts?: Array<{
-      text?: string;
-      functionResponse?: unknown;
-      function_response?: unknown;
-    }>;
-  };
-};
+type ChatMessage = BubbleMessage;
 
 function initialMessages(): ChatMessage[] {
   return [
@@ -107,55 +60,6 @@ function initialMessages(): ChatMessage[] {
   ];
 }
 
-function randomID(prefix: string): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return `${prefix}-${crypto.randomUUID()}`;
-  }
-  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-
-function getUserID(): string {
-  const key = "recipes-agent-user-id";
-  const existing = window.localStorage.getItem(key);
-  if (existing != null && existing !== "") return existing;
-  const next = randomID("web-user");
-  window.localStorage.setItem(key, next);
-  return next;
-}
-
-function getSessionID(): string {
-  if (currentSessionID != null && currentSessionID !== "") return currentSessionID;
-  currentSessionID = randomID("session");
-  return currentSessionID;
-}
-
-function startNewSession(): string {
-  currentSessionID = randomID("session");
-  return currentSessionID;
-}
-
-async function ensureSession(baseURL: string, userID: string, sessionID: string) {
-  const sessionURL = `${baseURL}/apps/${encodeURIComponent(agentAppName)}/users/${encodeURIComponent(
-    userID,
-  )}/sessions/${encodeURIComponent(sessionID)}`;
-
-  const existing = await fetch(sessionURL);
-  if (existing.ok) return;
-  if (existing.status !== 404 && existing.status !== 500) {
-    throw new Error(`Could not check agent session (${existing.status})`);
-  }
-
-  const res = await fetch(sessionURL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: "{}",
-  });
-  if (!res.ok && res.status !== 409) {
-    throw new Error(`Could not start agent session (${res.status})`);
-  }
-}
-
 function replaceMessageContent(
   messages: ChatMessage[],
   messageID: string,
@@ -165,161 +69,6 @@ function replaceMessageContent(
   return messages.map((message) =>
     message.id === messageID ? { ...message, content, uiActions } : message,
   );
-}
-
-function extractText(event: AgentEvent): string {
-  return (
-    event.content?.parts
-      ?.map((part) => part.text ?? "")
-      .filter((text) => text !== "")
-      .join("") ?? ""
-  );
-}
-
-type ToolEventBatch = {
-  calls: Array<{ id: string; name: string; args?: Record<string, unknown> }>;
-  responses: Array<{ id: string; name: string; response: unknown }>;
-};
-
-type BubbleStreamHandlers = {
-  onProgress: (text: string, uiActions: UIAction[]) => void;
-  onBubbleFinish: (
-    text: string,
-    uiActions: UIAction[],
-    rawEvents: string[],
-  ) => void;
-  onToolEvents: (events: ToolEventBatch) => void;
-};
-
-async function readAgentStream(
-  response: Response,
-  handlers: BubbleStreamHandlers,
-): Promise<void> {
-  if (response.body == null) {
-    throw new Error("Agent response did not include a stream.");
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let accumulatedText = "";
-  let accumulatedUIActions: UIAction[] = [];
-  let bubbleRawEvents: string[] = [];
-  let bubbleHasContent = false;
-
-  function finalizeBubble() {
-    handlers.onBubbleFinish(
-      accumulatedText,
-      accumulatedUIActions,
-      bubbleRawEvents,
-    );
-    accumulatedText = "";
-    accumulatedUIActions = [];
-    bubbleRawEvents = [];
-    bubbleHasContent = false;
-  }
-
-  function processRawEvent(rawEvent: string) {
-    const data = rawEvent
-      .split("\n")
-      .filter((line) => line.startsWith("data:"))
-      .map((line) => line.slice(5).trimStart())
-      .join("\n");
-    if (data === "") return;
-    bubbleRawEvents.push(data);
-
-    const parsed = JSON.parse(data) as AgentEvent | { error?: string };
-    if ("error" in parsed && typeof parsed.error === "string") {
-      throw new Error(parsed.error);
-    }
-    const event = parsed as AgentEvent;
-    const eventUIActions = extractUIActionsFromEvent(event);
-    if (eventUIActions.length > 0) {
-      accumulatedUIActions = uniqueUIActions([
-        ...accumulatedUIActions,
-        ...eventUIActions,
-      ]);
-      bubbleHasContent = true;
-    }
-    const toolEvents = extractToolEventsFromEvent(event);
-    // Tool events are managed by the caller (assigned to the bubble that
-    // created the call, then updated in place when the response arrives).
-    // They do not flip bubbleHasContent: a functionCall often carries
-    // turnComplete=true, and finalizing on that would split the bubble
-    // before the assistant's text response arrives.
-    if (toolEvents.calls.length > 0 || toolEvents.responses.length > 0) {
-      handlers.onToolEvents(toolEvents);
-    }
-    const text = extractText(event);
-    if (text !== "") {
-      if (event.partial) {
-        accumulatedText = text.startsWith(accumulatedText)
-          ? text
-          : `${accumulatedText}${text}`;
-      } else if (
-        accumulatedText === "" ||
-        text.startsWith(accumulatedText)
-      ) {
-        accumulatedText = text;
-      } else if (!accumulatedText.endsWith(text)) {
-        accumulatedText = `${accumulatedText}${text}`;
-      }
-      bubbleHasContent = true;
-    }
-
-    if (text !== "" || eventUIActions.length > 0) {
-      handlers.onProgress(accumulatedText, accumulatedUIActions);
-    }
-
-    if (event.turnComplete === true && bubbleHasContent) {
-      finalizeBubble();
-    }
-  }
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      buffer += decoder.decode();
-      break;
-    }
-
-    buffer += decoder.decode(value, { stream: true });
-    const events = buffer.split(/\n\n/);
-    buffer = events.pop() ?? "";
-
-    for (const rawEvent of events) {
-      processRawEvent(rawEvent);
-    }
-  }
-  if (buffer.trim() !== "") {
-    processRawEvent(buffer);
-  }
-
-  if (bubbleHasContent || bubbleRawEvents.length > 0) {
-    finalizeBubble();
-  }
-}
-
-function sameUIActions(
-  a: UIAction[] | undefined,
-  b: UIAction[] | undefined,
-): boolean {
-  const left = a ?? [];
-  const right = b ?? [];
-  if (left.length !== right.length) return false;
-  for (let i = 0; i < left.length; i++) {
-    const x = left[i];
-    const y = right[i];
-    if (x.type !== y.type) return false;
-    if (
-      x.type === "navigate_recipe" &&
-      y.type === "navigate_recipe" &&
-      x.recipeId !== y.recipeId
-    ) {
-      return false;
-    }
-  }
-  return true;
 }
 
 function formatRawEvents(rawEvents: string[]): string {
@@ -334,359 +83,20 @@ function formatRawEvents(rawEvents: string[]): string {
     .join("\n\n");
 }
 
-function getHighlightedText(): string | undefined {
-  const text = window.getSelection()?.toString().replace(/\s+/g, " ").trim();
-  if (text == null || text === "") return undefined;
-  return text.slice(0, 2000);
-}
-
-function getAppContext(path: string): AppContext {
-  if (path === "/") {
-    return { screen: "recipe_list", path };
-  }
-  const recipeMatch = path.match(/^\/recipe\/([^/]+)(?:\/edit)?\/?$/);
-  if (recipeMatch != null) {
-    return {
-      screen: "specific_recipe",
-      path,
-      recipeId: decodeURIComponent(recipeMatch[1]),
-    };
-  }
-  if (path === "/create") {
-    return { screen: "create_recipe", path };
-  }
-  return { screen: "other", path };
-}
-
-function buildAgentMessage(userMessage: string, appContext: AppContext): string {
-  return JSON.stringify(
-    {
-      appContext,
-      userMessage,
-    },
-    null,
-    2,
-  );
-}
-
-function describeToolCall(call: ToolCall): string {
-  if (call.summary != null && call.summary !== "") return call.summary;
-  return call.name;
-}
-
-function ToolCallChip({
-  call,
-  onClick,
-}: {
-  call: ToolCall;
-  onClick: (call: ToolCall) => void;
-}) {
-  const label = describeToolCall(call);
-  const styles =
-    call.status === "error"
-      ? "bg-red-50 text-red-800 hover:bg-red-100 dark:bg-red-950/60 dark:text-red-200 dark:hover:bg-red-900/60"
-      : call.status === "pending"
-        ? "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
-        : "bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:text-emerald-200 dark:hover:bg-emerald-900/60";
-  const icon =
-    call.status === "error" ? (
-      <AlertCircle className="size-3" aria-hidden />
-    ) : call.status === "pending" ? (
-      <Loader2 className="size-3 animate-spin" aria-hidden />
-    ) : (
-      <CheckCircle2 className="size-3" aria-hidden />
-    );
-  return (
-    <button
-      type="button"
-      title={`${call.name}${call.summary ? ` — ${call.summary}` : ""}`}
-      onClick={(event) => {
-        event.stopPropagation();
-        onClick(call);
-      }}
-      className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[0.6875rem] font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${styles}`}
-    >
-      <Wrench className="size-3 shrink-0 opacity-60" aria-hidden />
-      {icon}
-      <span className="truncate font-mono">{label}</span>
-    </button>
-  );
-}
-
-function formatJSON(value: unknown): string {
-  if (value === undefined) return "";
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-
-function ToolCallDialog({
-  call,
+function ToolCallDialogContainer({
+  id,
   onClose,
 }: {
-  call: ToolCall;
+  id: string;
   onClose: () => void;
 }) {
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
-
-  const argsBody = formatJSON(call.args);
-  const responseBody = formatJSON(call.response);
-  const statusLabel =
-    call.status === "pending"
-      ? "Running"
-      : call.status === "error"
-        ? "Failed"
-        : "Succeeded";
-  const statusStyles =
-    call.status === "error"
-      ? "bg-red-100 text-red-800 dark:bg-red-950/70 dark:text-red-200"
-      : call.status === "pending"
-        ? "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
-        : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-200";
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Tool call: ${call.name}`}
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-950/85 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 text-zinc-100 shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <header className="flex items-start justify-between gap-3 border-b border-zinc-800 px-4 py-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <Wrench className="size-4 text-zinc-400" aria-hidden />
-              <h3 className="truncate font-mono text-sm font-semibold">
-                {call.name}
-              </h3>
-              <span
-                className={`shrink-0 rounded-full px-2 py-0.5 text-[0.6875rem] font-medium ${statusStyles}`}
-              >
-                {statusLabel}
-              </span>
-            </div>
-            {call.summary ? (
-              <p className="mt-1 break-all font-mono text-xs text-zinc-400">
-                {call.summary}
-              </p>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            className="rounded-full p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500"
-            onClick={onClose}
-            aria-label="Close tool call dialog"
-          >
-            <X className="size-4" aria-hidden />
-          </button>
-        </header>
-        <div className="flex-1 space-y-4 overflow-auto px-4 py-3">
-          <section>
-            <h4 className="mb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wide text-zinc-500">
-              Arguments
-            </h4>
-            <pre className="whitespace-pre-wrap break-words rounded-lg bg-zinc-900 px-3 py-2 font-mono text-xs leading-relaxed text-zinc-300">
-              {argsBody === "" ? (
-                <span className="text-zinc-500">(no arguments)</span>
-              ) : (
-                <HighlightedJSON source={argsBody} />
-              )}
-            </pre>
-          </section>
-          <section>
-            <h4 className="mb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wide text-zinc-500">
-              Response
-            </h4>
-            <pre className="whitespace-pre-wrap break-words rounded-lg bg-zinc-900 px-3 py-2 font-mono text-xs leading-relaxed text-zinc-300">
-              {responseBody === "" ? (
-                <span className="text-zinc-500">
-                  {call.status === "pending"
-                    ? "(awaiting response)"
-                    : "(no response data)"}
-                </span>
-              ) : (
-                <HighlightedJSON source={responseBody} />
-              )}
-            </pre>
-          </section>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function describeUIAction(action: UIAction): string {
-  switch (action.type) {
-    case "navigate_recipe":
-      return "Open recipe";
-    case "navigate_recipe_list":
-      return "Open recipe list";
-    case "refresh_current_screen":
-      return "Refresh current screen";
-  }
-}
-
-function MarkdownMessage({ content }: { content: string }) {
-  return (
-    <ReactMarkdown
-      components={{
-        a: ({ children, ...props }) => (
-          <a
-            {...props}
-            className="font-medium text-amber-700 underline-offset-2 hover:underline dark:text-amber-300"
-            target="_blank"
-            rel="noreferrer"
-          >
-            {children}
-          </a>
-        ),
-        code: ({ children }) => (
-          <code className="rounded bg-zinc-100 px-1 py-0.5 text-[0.8125em] text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">
-            {children}
-          </code>
-        ),
-        ol: ({ children }) => (
-          <ol className="list-decimal space-y-1 pl-5">{children}</ol>
-        ),
-        p: ({ children }) => <p className="leading-relaxed">{children}</p>,
-        pre: ({ children }) => (
-          <pre className="overflow-auto rounded-lg bg-zinc-100 p-3 text-xs dark:bg-zinc-950">
-            {children}
-          </pre>
-        ),
-        ul: ({ children }) => <ul className="list-disc space-y-1 pl-5">{children}</ul>,
-      }}
-    >
-      {content}
-    </ReactMarkdown>
-  );
-}
-
-function HighlightedJSON({ source }: { source: string }) {
-  const tokens: ReactNode[] = [];
-  const regex =
-    /("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false|null)\b|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g;
-  let lastIndex = 0;
-  let key = 0;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(source)) !== null) {
-    if (match.index > lastIndex) {
-      tokens.push(source.slice(lastIndex, match.index));
-    }
-    if (match[1] != null) {
-      const isKey = match[2] != null;
-      tokens.push(
-        <span
-          key={key++}
-          className={isKey ? "text-amber-300" : "text-emerald-300"}
-        >
-          {match[1]}
-        </span>,
-      );
-      if (isKey) tokens.push(match[2]);
-    } else if (match[3] != null) {
-      tokens.push(
-        <span
-          key={key++}
-          className={match[3] === "null" ? "text-zinc-500" : "text-rose-300"}
-        >
-          {match[3]}
-        </span>,
-      );
-    } else if (match[4] != null) {
-      tokens.push(
-        <span key={key++} className="text-sky-300">
-          {match[4]}
-        </span>,
-      );
-    }
-    lastIndex = regex.lastIndex;
-  }
-  if (lastIndex < source.length) {
-    tokens.push(source.slice(lastIndex));
-  }
-  return <>{tokens}</>;
-}
-
-function DebugDialog({
-  message,
-  onClose,
-}: {
-  message: ChatMessage;
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
-
-  const title = message.role === "user" ? "Raw request" : "Raw response";
-  const body = message.rawDebug ?? "";
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-950/85 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 text-zinc-100 shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <header className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
-          <h3 className="text-sm font-semibold">{title}</h3>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              className="rounded-full px-2.5 py-1 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500"
-              onClick={() => {
-                if (typeof navigator !== "undefined" && navigator.clipboard) {
-                  void navigator.clipboard.writeText(body);
-                }
-              }}
-            >
-              Copy
-            </button>
-            <button
-              type="button"
-              className="rounded-full p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500"
-              onClick={onClose}
-              aria-label="Close debug dialog"
-            >
-              <X className="size-4" aria-hidden />
-            </button>
-          </div>
-        </header>
-        <pre className="flex-1 overflow-auto whitespace-pre-wrap break-words px-4 py-3 font-mono text-xs leading-relaxed text-zinc-300">
-          {body === "" ? (
-            "(no debug data captured)"
-          ) : (
-            <HighlightedJSON source={body} />
-          )}
-        </pre>
-      </div>
-    </div>
-  );
+  const call = useToolCall(id);
+  if (call == null) return null;
+  return <ToolCallDialog call={call} onClose={onClose} />;
 }
 
 export function AgentChat() {
+  const toolStore = useMemo<ToolContextStore>(() => createToolContextStore(), []);
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [draft, setDraft] = useState("");
@@ -696,16 +106,6 @@ export function AgentChat() {
   const [selectedToolCallID, setSelectedToolCallID] = useState<string | null>(
     null,
   );
-  const liveSelectedToolCall = useMemo<ToolCall | null>(() => {
-    if (selectedToolCallID == null) return null;
-    for (const message of messages) {
-      const found = message.toolCalls?.find(
-        (call) => call.id === selectedToolCallID,
-      );
-      if (found != null) return found;
-    }
-    return null;
-  }, [selectedToolCallID, messages]);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const baseURL = useMemo(getAgentBaseURL, []);
@@ -735,7 +135,20 @@ export function AgentChat() {
     setMessages(initialMessages());
     setDraft("");
     setError(null);
+    toolStore.reset();
     inputRef.current?.focus();
+  }
+
+  function runSideEffects(uiActions: UIAction[]) {
+    for (const action of uiActions) {
+      if (action.type === "navigate_recipe") {
+        void navigate(`/recipe/${encodeURIComponent(action.recipeId)}`);
+      } else if (action.type === "navigate_recipe_list") {
+        void navigate("/");
+      } else if (action.type === "refresh_current_screen") {
+        void revalidator.revalidate();
+      }
+    }
   }
 
   async function sendMessage() {
@@ -778,12 +191,9 @@ export function AgentChat() {
     setDraft("");
     setError(null);
     setIsSending(true);
+
     let pendingNextBubble = false;
-    // Tool call ids → the bubble (message id) that owns them. Each call
-    // is created in exactly one bubble, and its response updates that
-    // same bubble's chip in place — even if the response arrives in a
-    // later bubble.
-    const toolCallOwners = new Map<string, string>();
+    let lastFinalizedBubbleID: string | null = null;
 
     function ensureCurrentBubble() {
       if (!pendingNextBubble) return;
@@ -810,33 +220,32 @@ export function AgentChat() {
       }
 
       await readAgentStream(res, {
-        onProgress: (chunk, streamUIActions) => {
+        onTextProgress: (chunk, streamUIActions) => {
           ensureCurrentBubble();
           const id = currentAssistantID;
           const parsed = parseAssistantResponse(chunk);
+          const uiActions = uniqueUIActions([
+            ...streamUIActions,
+            ...parsed.uiActions,
+          ]);
           setMessages((current) =>
-            replaceMessageContent(
-              current,
-              id,
-              parsed.content,
-              uniqueUIActions([...streamUIActions, ...parsed.uiActions]),
-            ),
+            replaceMessageContent(current, id, parsed.content, uiActions),
           );
         },
+
         onToolEvents: (toolEvents) => {
           for (const call of toolEvents.calls) {
             if (isInternalToolName(call.name)) continue;
-            if (toolCallOwners.has(call.id)) continue;
+            const isNew = toolStore.register(call);
+            if (!isNew) continue;
             ensureCurrentBubble();
             const ownerId = currentAssistantID;
-            toolCallOwners.set(call.id, ownerId);
-            const newCall = makePendingToolCall(call);
             setMessages((current) =>
               current.map((message) =>
                 message.id === ownerId
                   ? {
                       ...message,
-                      toolCalls: [...(message.toolCalls ?? []), newCall],
+                      toolCallIds: [...(message.toolCallIds ?? []), call.id],
                     }
                   : message,
               ),
@@ -844,22 +253,11 @@ export function AgentChat() {
           }
           for (const response of toolEvents.responses) {
             if (isInternalToolName(response.name)) continue;
-            const ownerId = toolCallOwners.get(response.id);
-            if (ownerId == null) continue;
-            setMessages((current) =>
-              current.map((message) => {
-                if (message.id !== ownerId) return message;
-                const toolCalls = (message.toolCalls ?? []).map((tc) =>
-                  tc.id === response.id
-                    ? applyToolResponse(tc, response.response)
-                    : tc,
-                );
-                return { ...message, toolCalls };
-              }),
-            );
+            toolStore.applyResponse(response.id, response.response);
           }
         },
-        onBubbleFinish: (chunk, streamUIActions, rawEvents) => {
+
+        onTurnFinalize: (chunk, streamUIActions, rawEvents) => {
           const id = currentAssistantID;
           const parsed = parseAssistantResponse(chunk);
           const uiActions = uniqueUIActions([
@@ -867,62 +265,50 @@ export function AgentChat() {
             ...parsed.uiActions,
           ]);
           const rawDebug = formatRawEvents(rawEvents);
-          let mergedIntoPrev = false;
-          setMessages((current) => {
-            const idx = current.findIndex((m) => m.id === id);
-            if (idx > 0) {
-              const cur = current[idx];
-              const prev = current[idx - 1];
-              const noToolCalls =
-                cur.toolCalls == null || cur.toolCalls.length === 0;
-              // ADK occasionally re-emits a turn's final text as a fresh
-              // event after turnComplete already finalized the bubble. That
-              // second emission lands in a new (empty) bubble that we
-              // grow with the same text + uiActions. Detect that here and
-              // fold the duplicate into the previous bubble instead of
-              // showing the user the same message twice.
-              if (
-                noToolCalls &&
-                prev.role === "assistant" &&
-                prev.content === parsed.content &&
-                sameUIActions(prev.uiActions, uiActions)
-              ) {
-                mergedIntoPrev = true;
-                const next = current.slice();
-                next[idx - 1] = {
-                  ...prev,
-                  rawDebug:
-                    prev.rawDebug != null && prev.rawDebug !== ""
-                      ? `${prev.rawDebug}\n\n${rawDebug}`
-                      : rawDebug,
-                };
-                next.splice(idx, 1);
-                return next;
-              }
-            }
-            return current.map((message) =>
+          setMessages((current) =>
+            current.map((message) =>
               message.id === id
                 ? {
                     ...message,
                     content: parsed.content,
                     uiActions,
-                    rawDebug,
+                    rawDebug:
+                      message.rawDebug != null && message.rawDebug !== ""
+                        ? `${message.rawDebug}\n\n${rawDebug}`
+                        : rawDebug,
                   }
                 : message,
-            );
-          });
-          if (!mergedIntoPrev) {
-            for (const action of uiActions) {
-              if (action.type === "navigate_recipe") {
-                void navigate(`/recipe/${encodeURIComponent(action.recipeId)}`);
-              } else if (action.type === "navigate_recipe_list") {
-                void navigate("/");
-              } else if (action.type === "refresh_current_screen") {
-                void revalidator.revalidate();
-              }
-            }
-          }
+            ),
+          );
+          runSideEffects(uiActions);
+          lastFinalizedBubbleID = id;
           pendingNextBubble = true;
+        },
+
+        onTurnAuthoritativeText: (chunk, streamUIActions, rawEvents) => {
+          const targetId = lastFinalizedBubbleID ?? currentAssistantID;
+          const parsed = parseAssistantResponse(chunk);
+          const uiActions = uniqueUIActions([
+            ...streamUIActions,
+            ...parsed.uiActions,
+          ]);
+          const rawDebugAppend = formatRawEvents(rawEvents);
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === targetId
+                ? {
+                    ...message,
+                    content: parsed.content,
+                    uiActions,
+                    rawDebug:
+                      message.rawDebug != null && message.rawDebug !== ""
+                        ? `${message.rawDebug}\n\n${rawDebugAppend}`
+                        : rawDebugAppend,
+                  }
+                : message,
+            ),
+          );
+          // Side effects already fired in onTurnFinalize; do not re-fire.
         },
       });
     } catch (err) {
@@ -939,252 +325,166 @@ export function AgentChat() {
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-50">
-      {isOpen ? (
-        <section className="flex h-[min(36rem,calc(100vh-2.5rem))] w-[min(28rem,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
-          <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-            <div className="flex items-center gap-2">
-              <span className="flex size-8 items-center justify-center rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-200">
-                <Bot className="size-4" aria-hidden />
-              </span>
-              <div>
-                <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                  Recipe copilot
-                </h2>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Powered by the agent API
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-medium text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 disabled:pointer-events-none disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-                onClick={startNewChat}
-                disabled={isSending}
-                aria-label="Start new chat"
-              >
-                <RotateCcw className="size-3.5" aria-hidden />
-                New
-              </button>
-              <button
-                type="button"
-                className="rounded-full p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-                onClick={() => setIsOpen(false)}
-                aria-label="Close recipe copilot"
-              >
-                <X className="size-4" aria-hidden />
-              </button>
-            </div>
-          </header>
-
-          <div className="flex-1 space-y-3 overflow-y-auto bg-zinc-50/80 px-4 py-4 dark:bg-zinc-950/40">
-            {messages.map((message) => {
-              const isClickable =
-                message.rawDebug != null && message.rawDebug !== "";
-              return (
-              <div
-                key={message.id}
-                className={[
-                  "flex",
-                  message.role === "user" ? "justify-end" : "justify-start",
-                ].join(" ")}
-              >
-                <div
-                  role={isClickable ? "button" : undefined}
-                  tabIndex={isClickable ? 0 : undefined}
-                  title={isClickable ? "View raw debug payload" : undefined}
-                  onClick={
-                    isClickable
-                      ? (event) => {
-                          const target = event.target as HTMLElement;
-                          if (target.closest("a, button")) return;
-                          setDebugMessage(message);
-                        }
-                      : undefined
-                  }
-                  onKeyDown={
-                    isClickable
-                      ? (event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            setDebugMessage(message);
-                          }
-                        }
-                      : undefined
-                  }
-                  className={[
-                    "max-w-[85%] rounded-2xl px-3 py-2 text-sm shadow-sm",
-                    isClickable
-                      ? "cursor-pointer transition hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
-                      : "",
-                    message.role === "user"
-                      ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                      : "border border-zinc-200 bg-white text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100",
-                  ].join(" ")}
-                >
-                  {message.role === "assistant" ? (
-                    <div className="space-y-2">
-                      {message.content === "" &&
-                      (message.toolCalls == null ||
-                        message.toolCalls.length === 0) ? (
-                        <span className="text-zinc-500 dark:text-zinc-400">
-                          Thinking...
-                        </span>
-                      ) : message.content !== "" ? (
-                        <MarkdownMessage content={message.content} />
-                      ) : null}
-                      {message.toolCalls != null && message.toolCalls.length > 0 ? (
-                        <div
-                          className={[
-                            "flex flex-wrap gap-1.5",
-                            message.content !== ""
-                              ? "border-t border-zinc-100 pt-2 dark:border-zinc-800"
-                              : "",
-                          ].join(" ")}
-                        >
-                          {message.toolCalls.map((call) => (
-                            <ToolCallChip
-                              key={call.id}
-                              call={call}
-                              onClick={(c) => setSelectedToolCallID(c.id)}
-                            />
-                          ))}
-                        </div>
-                      ) : null}
-                      {message.uiActions != null && message.uiActions.length > 0 ? (
-                        <div className="flex flex-wrap gap-1.5 border-t border-zinc-100 pt-2 dark:border-zinc-800">
-                          {message.uiActions.map((action, index) => (
-                            <span
-                              key={`${action.type}-${index}`}
-                              className="rounded-full bg-amber-50 px-2 py-0.5 text-[0.6875rem] font-medium text-amber-800 dark:bg-amber-950/70 dark:text-amber-200"
-                            >
-                              {describeUIAction(action)}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : message.content === "" ? (
-                    <span className="text-zinc-500 dark:text-zinc-400">
-                      Thinking...
-                    </span>
-                  ) : (
-                    <p className="whitespace-pre-wrap">{message.content}</p>
-                  )}
+    <ToolContextProvider store={toolStore}>
+      <div className="fixed bottom-5 right-5 z-50">
+        {isOpen ? (
+          <section className="flex h-[min(36rem,calc(100vh-2.5rem))] w-[min(28rem,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
+            <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+              <div className="flex items-center gap-2">
+                <span className="flex size-8 items-center justify-center rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-200">
+                  <Bot className="size-4" aria-hidden />
+                </span>
+                <div>
+                  <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                    Recipe copilot
+                  </h2>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Powered by the agent API
+                  </p>
                 </div>
               </div>
-              );
-            })}
-            {error ? (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
-                {error}
-              </div>
-            ) : null}
-            <div ref={bottomRef} />
-          </div>
-
-          <form
-            className="border-t border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void sendMessage();
-            }}
-          >
-            <div className="flex flex-col gap-2">
-              <textarea
-                ref={inputRef}
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    void sendMessage();
-                  }
-                }}
-                rows={2}
-                placeholder="Ask the copilot..."
-                className="min-h-10 w-full resize-none rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
-              />
-              <div className="flex items-center gap-2">
-                {prefs.options != null &&
-                prefs.options.imageOptions.length > 1 ? (
-                  <ModelDropdown
-                    ariaLabel="Image model"
-                    icon={<ImageIcon className="size-3.5" />}
-                    options={prefs.options.imageOptions.map((opt) => ({
-                      id: opt.id,
-                      label: opt.model,
-                    }))}
-                    value={prefs.imageModel}
-                    disabled={isSending}
-                    onChange={(id) =>
-                      prefsDispatch({
-                        type: AgentPreferencesActionType.SELECT_IMAGE,
-                        data: id,
-                      })
-                    }
-                  />
-                ) : null}
-                {prefs.options != null &&
-                prefs.options.agentOptions.length > 1 ? (
-                  <ModelDropdown
-                    ariaLabel="Agent model"
-                    icon={<Sparkles className="size-3.5" />}
-                    options={prefs.options.agentOptions.map((opt) => ({
-                      id: opt.id,
-                      label: opt.model,
-                    }))}
-                    value={prefs.agentModel}
-                    disabled={isSending}
-                    onChange={(id) =>
-                      prefsDispatch({
-                        type: AgentPreferencesActionType.SELECT_AGENT,
-                        data: id,
-                      })
-                    }
-                  />
-                ) : null}
-                <div className="flex-1" />
+              <div className="flex items-center gap-1">
                 <button
-                  type="submit"
-                  disabled={draft.trim() === "" || isSending}
-                  className="flex size-10 shrink-0 items-center justify-center rounded-full bg-amber-600 text-white shadow-sm transition hover:bg-amber-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-70 dark:focus-visible:ring-offset-zinc-900"
-                  aria-label={isSending ? "Agent is working" : "Send message"}
-                  aria-busy={isSending}
+                  type="button"
+                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-medium text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 disabled:pointer-events-none disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                  onClick={startNewChat}
+                  disabled={isSending}
+                  aria-label="Start new chat"
                 >
-                  {isSending ? (
-                    <Loader2 className="size-4 animate-spin" aria-hidden />
-                  ) : (
-                    <Send className="size-4" aria-hidden />
-                  )}
+                  <RotateCcw className="size-3.5" aria-hidden />
+                  New
+                </button>
+                <button
+                  type="button"
+                  className="rounded-full p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                  onClick={() => setIsOpen(false)}
+                  aria-label="Close recipe copilot"
+                >
+                  <X className="size-4" aria-hidden />
                 </button>
               </div>
+            </header>
+
+            <div className="flex-1 space-y-3 overflow-y-auto bg-zinc-50/80 px-4 py-4 dark:bg-zinc-950/40">
+              {messages.map((message) => (
+                <BubbleRow
+                  key={message.id}
+                  message={message}
+                  onDebugClick={setDebugMessage}
+                  onToolSelect={setSelectedToolCallID}
+                />
+              ))}
+              {error ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
+                  {error}
+                </div>
+              ) : null}
+              <div ref={bottomRef} />
             </div>
-          </form>
-        </section>
-      ) : (
-        <button
-          type="button"
-          className="flex size-14 items-center justify-center rounded-full bg-amber-600 text-white shadow-xl transition hover:scale-105 hover:bg-amber-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-950"
-          onClick={() => setIsOpen(true)}
-          aria-label="Open recipe copilot"
-        >
-          <MessageCircle className="size-6" aria-hidden />
-        </button>
-      )}
-      {debugMessage != null ? (
-        <DebugDialog
-          message={debugMessage}
-          onClose={() => setDebugMessage(null)}
-        />
-      ) : null}
-      {liveSelectedToolCall != null ? (
-        <ToolCallDialog
-          call={liveSelectedToolCall}
-          onClose={() => setSelectedToolCallID(null)}
-        />
-      ) : null}
-    </div>
+
+            <form
+              className="border-t border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void sendMessage();
+              }}
+            >
+              <div className="flex flex-col gap-2">
+                <textarea
+                  ref={inputRef}
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      void sendMessage();
+                    }
+                  }}
+                  rows={2}
+                  placeholder="Ask the copilot..."
+                  className="min-h-10 w-full resize-none rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
+                />
+                <div className="flex items-center gap-2">
+                  {prefs.options != null &&
+                  prefs.options.imageOptions.length > 1 ? (
+                    <ModelDropdown
+                      ariaLabel="Image model"
+                      icon={<ImageIcon className="size-3.5" />}
+                      options={prefs.options.imageOptions.map((opt) => ({
+                        id: opt.id,
+                        label: opt.model,
+                      }))}
+                      value={prefs.imageModel}
+                      disabled={isSending}
+                      onChange={(id) =>
+                        prefsDispatch({
+                          type: AgentPreferencesActionType.SELECT_IMAGE,
+                          data: id,
+                        })
+                      }
+                    />
+                  ) : null}
+                  {prefs.options != null &&
+                  prefs.options.agentOptions.length > 1 ? (
+                    <ModelDropdown
+                      ariaLabel="Agent model"
+                      icon={<Sparkles className="size-3.5" />}
+                      options={prefs.options.agentOptions.map((opt) => ({
+                        id: opt.id,
+                        label: opt.model,
+                      }))}
+                      value={prefs.agentModel}
+                      disabled={isSending}
+                      onChange={(id) =>
+                        prefsDispatch({
+                          type: AgentPreferencesActionType.SELECT_AGENT,
+                          data: id,
+                        })
+                      }
+                    />
+                  ) : null}
+                  <div className="flex-1" />
+                  <button
+                    type="submit"
+                    disabled={draft.trim() === "" || isSending}
+                    className="flex size-10 shrink-0 items-center justify-center rounded-full bg-amber-600 text-white shadow-sm transition hover:bg-amber-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-70 dark:focus-visible:ring-offset-zinc-900"
+                    aria-label={isSending ? "Agent is working" : "Send message"}
+                    aria-busy={isSending}
+                  >
+                    {isSending ? (
+                      <Loader2 className="size-4 animate-spin" aria-hidden />
+                    ) : (
+                      <Send className="size-4" aria-hidden />
+                    )}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </section>
+        ) : (
+          <button
+            type="button"
+            className="flex size-14 items-center justify-center rounded-full bg-amber-600 text-white shadow-xl transition hover:scale-105 hover:bg-amber-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-950"
+            onClick={() => setIsOpen(true)}
+            aria-label="Open recipe copilot"
+          >
+            <MessageCircle className="size-6" aria-hidden />
+          </button>
+        )}
+        {debugMessage != null ? (
+          <DebugDialog
+            title={debugMessage.role === "user" ? "Raw request" : "Raw response"}
+            body={debugMessage.rawDebug ?? ""}
+            onClose={() => setDebugMessage(null)}
+          />
+        ) : null}
+        {selectedToolCallID != null ? (
+          <ToolCallDialogContainer
+            id={selectedToolCallID}
+            onClose={() => setSelectedToolCallID(null)}
+          />
+        ) : null}
+      </div>
+    </ToolContextProvider>
   );
 }
