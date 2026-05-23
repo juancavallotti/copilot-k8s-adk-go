@@ -15,12 +15,6 @@ import (
 	"juancavallotti.com/recipes-repo/internal/service"
 )
 
-// ErrSkillNotFound is returned when no skill matches the given id or name.
-var ErrSkillNotFound = dbops.ErrSkillNotFound
-
-// ErrSkillNameTaken is returned when creating a skill whose name already exists.
-var ErrSkillNameTaken = dbops.ErrSkillNameTaken
-
 type Repo struct {
 	service *service.Service
 	pool    *sql.DB

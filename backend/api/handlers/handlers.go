@@ -38,4 +38,13 @@ func (h *Handlers) Register(r gin.IRouter) {
 		events.GET("", h.ListEvents)
 		events.GET("/:event_id/traces", h.ListEventTraces)
 	}
+
+	skills := r.Group("/skills")
+	{
+		skills.GET("", h.ListSkills)
+		skills.POST("", h.CreateSkill)
+		skills.GET("/:id", h.GetSkill)
+		skills.PATCH("/:id", h.PatchSkill)
+		skills.DELETE("/:id", h.DeleteSkill)
+	}
 }

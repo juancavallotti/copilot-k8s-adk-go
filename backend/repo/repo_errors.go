@@ -13,4 +13,11 @@ var (
 	ErrParseIngredient = dbops.ErrParseIngredient
 	ErrInvalidRecipe   = service.ErrInvalidRecipe
 	ErrInvalidRecipeID = service.ErrInvalidRecipeID
+
+	ErrSkillNotFound           = dbops.ErrSkillNotFound
+	ErrSkillNameTaken          = dbops.ErrSkillNameTaken
+	ErrInvalidSkillID          = service.ErrInvalidSkillID
+	ErrInvalidSkillName        = service.ErrInvalidSkillName
+	ErrInvalidSkillDescription = service.ErrInvalidSkillDescription
+	ErrInvalidSkillContent     = service.ErrInvalidSkillContent
 )
