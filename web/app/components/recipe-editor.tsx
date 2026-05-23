@@ -205,6 +205,7 @@ export function RecipeEditor({ value, onChange, disabled = false }: RecipeEditor
 
       <StringListEditor
         label="Instructions"
+        hint="Markdown is supported in each step."
         values={value.instructions}
         onChange={(instructions) => onChange({ ...value, instructions })}
         disabled={disabled}

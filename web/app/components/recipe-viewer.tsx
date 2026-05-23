@@ -131,7 +131,7 @@ export function RecipeViewer({ recipe }: RecipeViewerProps) {
               <ol className="mt-3 list-decimal space-y-4 pl-5 text-sm leading-relaxed text-zinc-800 dark:text-zinc-200">
                 {instructions.map((step, i) => (
                   <li key={i} className="pl-1">
-                    {step}
+                    <RecipeMarkdown>{step}</RecipeMarkdown>
                   </li>
                 ))}
               </ol>
