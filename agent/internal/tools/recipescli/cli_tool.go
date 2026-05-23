@@ -3,10 +3,11 @@ package recipescli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os/exec"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/genai"
 )
 
 const (
@@ -64,7 +66,12 @@ func runRecipesCLIWithOutputLimit(ctx context.Context, input callRecipesCLIArgs,
 	defer cancel()
 
 	cmd := exec.CommandContext(runCtx, Binary, input.Args...)
-	log.Printf("tool call_recipes_cli: start args=%q timeout=%s stdin_bytes=%d", input.Args, timeout, len(input.Stdin))
+	slog.Info("tool.recipes_cli.start", append(cliTraceAttrs(ctx),
+		"args", input.Args,
+		"timeout", timeout,
+		"timeout_ms", timeout.Milliseconds(),
+		"stdin_bytes", len(input.Stdin),
+	)...)
 	if input.Stdin != "" {
 		cmd.Stdin = strings.NewReader(input.Stdin)
 	}
@@ -86,12 +93,84 @@ func runRecipesCLIWithOutputLimit(ctx context.Context, input callRecipesCLIArgs,
 		TimedOut: errors.Is(runCtx.Err(), context.DeadlineExceeded),
 	}
 	result.Successful = err == nil
-	log.Printf("tool call_recipes_cli: done args=%q exit_code=%d success=%t timed_out=%t stdout_bytes=%d stderr_bytes=%d duration=%s", input.Args, result.ExitCode, result.Successful, result.TimedOut, stdout.buf.Len(), stderr.buf.Len(), duration.Round(time.Millisecond))
+	roundedDuration := duration.Round(time.Millisecond)
+	slog.Info("tool.recipes_cli.done", append(cliTraceAttrs(ctx),
+		"args", input.Args,
+		"command", result.Command,
+		"exit_code", result.ExitCode,
+		"successful", result.Successful,
+		"timed_out", result.TimedOut,
+		"stdout_bytes", stdout.buf.Len(),
+		"stderr_bytes", stderr.buf.Len(),
+		"duration", roundedDuration,
+		"duration_ms", roundedDuration.Milliseconds(),
+	)...)
 
 	if err != nil && result.ExitCode == -1 && !result.TimedOut {
 		return result, fmt.Errorf("run %s: %w", Binary, err)
 	}
 	return result, nil
+}
+
+type traceContext interface {
+	InvocationID() string
+	SessionID() string
+	UserID() string
+	AppName() string
+	AgentName() string
+	Branch() string
+	FunctionCallID() string
+	UserContent() *genai.Content
+}
+
+func cliTraceAttrs(ctx context.Context) []any {
+	tc, ok := ctx.(traceContext)
+	if !ok {
+		return nil
+	}
+	attrs := []any{
+		"invocation_id", tc.InvocationID(),
+		"session_id", tc.SessionID(),
+		"user_id", tc.UserID(),
+		"app_name", tc.AppName(),
+		"agent", tc.AgentName(),
+		"branch", tc.Branch(),
+		"function_call_id", tc.FunctionCallID(),
+		"tool", "call_recipes_cli",
+	}
+	if prompt := traceUserPromptText(tc.UserContent()); prompt != "" {
+		attrs = append(attrs, "user_prompt", prompt)
+	}
+	return attrs
+}
+
+func traceUserPromptText(c *genai.Content) string {
+	raw := strings.TrimSpace(traceContentText(c))
+	if raw == "" {
+		return ""
+	}
+	var wrapped struct {
+		UserMessage string `json:"userMessage"`
+	}
+	if err := json.Unmarshal([]byte(raw), &wrapped); err == nil {
+		if message := strings.TrimSpace(wrapped.UserMessage); message != "" {
+			return message
+		}
+	}
+	return raw
+}
+
+func traceContentText(c *genai.Content) string {
+	if c == nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, p := range c.Parts {
+		if p != nil && p.Text != "" {
+			b.WriteString(p.Text)
+		}
+	}
+	return b.String()
 }
 
 func validateCLIArgs(args []string) error {

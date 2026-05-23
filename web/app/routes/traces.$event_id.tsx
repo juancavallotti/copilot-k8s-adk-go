@@ -10,6 +10,15 @@ import {
 
 import type { Trace } from "~/lib/traces-api";
 import {
+  findUserPrompt,
+  getTraceMsg,
+  groupTraces,
+  itemKey,
+  itemTime,
+  itemToolName,
+  type TraceItem,
+} from "~/lib/trace-grouping";
+import {
   TraceDetailProvider,
   useTraceDetailState,
 } from "~/state/trace-detail/context";
@@ -46,47 +55,6 @@ export function meta({ data }: Route.MetaArgs) {
   return [{ title: "Event · Recipe manager" }];
 }
 
-function getTraceMsg(data: unknown): string {
-  if (data != null && typeof data === "object" && "msg" in data) {
-    const m = (data as { msg?: unknown }).msg;
-    if (typeof m === "string") return m;
-  }
-  return "";
-}
-
-function getToolName(data: unknown): string {
-  if (data != null && typeof data === "object" && "tool" in data) {
-    const t = (data as { tool?: unknown }).tool;
-    if (typeof t === "string") return t;
-  }
-  return "";
-}
-
-type TraceItem =
-  | { kind: "single"; trace: Trace }
-  | { kind: "toolGroup"; traces: Trace[] };
-
-function groupTraces(traces: Trace[]): TraceItem[] {
-  const items: TraceItem[] = [];
-  let pending: Trace[] = [];
-  const flush = () => {
-    if (pending.length > 0) {
-      items.push({ kind: "toolGroup", traces: pending });
-      pending = [];
-    }
-  };
-  for (const trace of traces) {
-    if (getTraceMsg(trace.data).startsWith("tool.")) {
-      pending.push(trace);
-    } else {
-      flush();
-      items.push({ kind: "single", trace });
-    }
-  }
-  flush();
-  return items;
-}
-
 function findContainingItem(
   items: TraceItem[],
   traceId: string | null,
@@ -102,16 +70,6 @@ function findContainingItem(
   return null;
 }
 
-function itemKey(item: TraceItem): string {
-  return item.kind === "single" ? item.trace.id : item.traces[0].id;
-}
-
-function itemTime(item: TraceItem): string {
-  return item.kind === "single"
-    ? item.trace.occurred_at
-    : item.traces[0].occurred_at;
-}
-
 function durationMs(from: string, to: string): number {
   return new Date(to).getTime() - new Date(from).getTime();
 }
@@ -123,14 +81,6 @@ function formatDuration(ms: number): string {
   const m = Math.floor(ms / 60_000);
   const s = Math.round((ms % 60_000) / 1000);
   return `${m}m ${s}s`;
-}
-
-function itemToolName(item: Extract<TraceItem, { kind: "toolGroup" }>): string {
-  for (const t of item.traces) {
-    const name = getToolName(t.data);
-    if (name !== "") return name;
-  }
-  return "tool";
 }
 
 const jsonTokenRe =
@@ -272,6 +222,11 @@ function SelectedItemView({
       <div className="flex items-baseline justify-between gap-3 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
         <p className="truncate text-xs text-zinc-600 dark:text-zinc-400">
           Tool call · <span className="font-mono">{toolName}</span>
+          {item.functionCallId != null ? (
+            <span className="ml-2 font-mono text-zinc-500 dark:text-zinc-500">
+              · {item.functionCallId}
+            </span>
+          ) : null}
           {totalDuration != null ? (
             <span className="ml-2 text-zinc-500 dark:text-zinc-500">
               · {formatDuration(totalDuration)} total
@@ -359,6 +314,7 @@ function TraceDetailContent() {
     traces == null;
 
   const items = traces != null ? groupTraces(traces) : [];
+  const userPrompt = traces != null ? findUserPrompt(traces) : "";
   const matchedItem = findContainingItem(items, selectedId);
   const selectionMissed =
     traces != null && selectedId != null && matchedItem == null;
@@ -392,6 +348,17 @@ function TraceDetailContent() {
 
       {!error && (traces === null || isPending) ? (
         <p className="mt-8 text-sm text-zinc-500 dark:text-zinc-400">Loading…</p>
+      ) : null}
+
+      {!error && traces !== null && !isPending && userPrompt !== "" ? (
+        <section className="mt-4 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            User prompt
+          </p>
+          <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-800 dark:text-zinc-200">
+            {userPrompt}
+          </p>
+        </section>
       ) : null}
 
       {!error && traces !== null && !isPending && traces.length === 0 ? (

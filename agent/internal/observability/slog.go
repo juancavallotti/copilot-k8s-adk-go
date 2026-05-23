@@ -13,9 +13,9 @@ import (
 
 // Init installs a JSON slog handler as the default logger at the given level.
 // Records always go to stdout. If traceSink is non-nil, the subset of records
-// that represent agent activity (agent.event, llm.*, tool.*) is *also*
+// that represent agent activity (agent.event, state.delta, llm.*, tool.*) is *also*
 // written to traceSink — typically a TraceSink piping into recipes-cli
-// log-trace for persistence. Other records (agent.starting, state.delta,
+// log-trace for persistence. Other records (agent.starting,
 // anything user code emits) stay on stdout only.
 //
 // Empty or unrecognized levels fall back to info.
@@ -41,12 +41,12 @@ func Init(level string, traceSink io.Writer) {
 	slog.SetDefault(slog.New(h))
 }
 
-// isAgentTraceRecord matches the messages we want to persist as traces: the
-// session-level "agent.event" and any llm.* / tool.* callback. Bootstrap
-// events (agent.starting), state deltas, and stray library logs are skipped.
+// isAgentTraceRecord matches the messages we want to persist as traces:
+// session-level "agent.event" and "state.delta" records, plus any llm.* /
+// tool.* callback. Bootstrap events (agent.starting) and stray library logs are skipped.
 func isAgentTraceRecord(r slog.Record) bool {
 	m := r.Message
-	return m == "agent.event" || strings.HasPrefix(m, "llm.") || strings.HasPrefix(m, "tool.")
+	return m == "agent.event" || m == "state.delta" || strings.HasPrefix(m, "llm.") || strings.HasPrefix(m, "tool.")
 }
 
 // filteredTeeHandler always forwards to primary; it forwards to sink only
