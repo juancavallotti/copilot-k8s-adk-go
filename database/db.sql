@@ -96,6 +96,35 @@ CREATE TABLE IF NOT EXISTS traces (
 CREATE INDEX IF NOT EXISTS traces_event_id_idx ON traces (event_id);
 CREATE INDEX IF NOT EXISTS traces_event_id_occurred_at_idx ON traces (event_id, occurred_at);
 
+CREATE TABLE IF NOT EXISTS skills (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT skills_name_unique UNIQUE (name),
+    CONSTRAINT skills_name_slug CHECK (name ~ '^[a-z0-9][a-z0-9-]*[a-z0-9]$')
+);
+
+CREATE INDEX IF NOT EXISTS skills_name_idx ON skills (name);
+
+INSERT INTO skills (name, description, content) VALUES
+    ('recipe-management',
+     'Create, patch, delete recipes and manage recipe photos.',
+     '# Recipe Management
+
+Detailed behavior for this skill will be populated when the prompt is rewritten.')
+ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO skills (name, description, content) VALUES
+    ('trace-analysis',
+     'Investigate agent traces and events using list-events and list-traces.',
+     '# Trace Analysis
+
+Detailed behavior for this skill will be populated when the prompt is rewritten.')
+ON CONFLICT (name) DO NOTHING;
+
 CREATE OR REPLACE FUNCTION recipes_set_updated_at()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -109,6 +138,12 @@ $$;
 DROP TRIGGER IF EXISTS recipes_updated_at ON recipes;
 CREATE TRIGGER recipes_updated_at
     BEFORE UPDATE ON recipes
+    FOR EACH ROW
+    EXECUTE FUNCTION recipes_set_updated_at();
+
+DROP TRIGGER IF EXISTS skills_updated_at ON skills;
+CREATE TRIGGER skills_updated_at
+    BEFORE UPDATE ON skills
     FOR EACH ROW
     EXECUTE FUNCTION recipes_set_updated_at();
 

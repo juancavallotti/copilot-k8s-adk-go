@@ -56,6 +56,15 @@ type fakeRepo struct {
 	listTracesOffset   int
 	listTracesResult   []types.Trace
 	listTracesErr      error
+
+	listSkillsCalls  int
+	listSkillsResult []types.Skill
+	listSkillsErr    error
+
+	getSkillByNameCalls int
+	getSkillByNameArg   string
+	getSkillByNameResult types.Skill
+	getSkillByNameErr    error
 }
 
 type traceEntry struct {
@@ -154,6 +163,17 @@ func (f *fakeRepo) ListTracesByEvent(ctx context.Context, eventID string, limit,
 	f.listTracesLimit = limit
 	f.listTracesOffset = offset
 	return f.listTracesResult, f.listTracesErr
+}
+
+func (f *fakeRepo) ListSkills(ctx context.Context) ([]types.Skill, error) {
+	f.listSkillsCalls++
+	return f.listSkillsResult, f.listSkillsErr
+}
+
+func (f *fakeRepo) GetSkillByName(ctx context.Context, name string) (types.Skill, error) {
+	f.getSkillByNameCalls++
+	f.getSkillByNameArg = name
+	return f.getSkillByNameResult, f.getSkillByNameErr
 }
 
 func testRunner(stdin string, repo RecipeRepo, factoryCalls *int) (Runner, *bytes.Buffer, *bytes.Buffer) {

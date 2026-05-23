@@ -72,6 +72,30 @@ func (r *Repo) ListTracesByEvent(ctx context.Context, eventID string, limit, off
 	return r.service.ListTracesByEvent(ctx, eventID, limit, offset)
 }
 
+func (r *Repo) ListSkills(ctx context.Context) ([]types.Skill, error) {
+	return r.service.ListSkills(ctx)
+}
+
+func (r *Repo) GetSkill(ctx context.Context, id string) (types.Skill, error) {
+	return r.service.GetSkill(ctx, id)
+}
+
+func (r *Repo) GetSkillByName(ctx context.Context, name string) (types.Skill, error) {
+	return r.service.GetSkillByName(ctx, name)
+}
+
+func (r *Repo) CreateSkill(ctx context.Context, name, description, content string) (string, error) {
+	return r.service.CreateSkill(ctx, name, description, content)
+}
+
+func (r *Repo) UpdateSkill(ctx context.Context, id, description, content string) error {
+	return r.service.UpdateSkill(ctx, id, description, content)
+}
+
+func (r *Repo) DeleteSkill(ctx context.Context, id string) error {
+	return r.service.DeleteSkill(ctx, id)
+}
+
 func NewRepo() (*Repo, error) {
 	dbHost := os.Getenv("DB_HOST")
 	dbPort := os.Getenv("DB_PORT")

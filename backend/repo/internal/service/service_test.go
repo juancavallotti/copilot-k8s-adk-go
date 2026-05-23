@@ -116,6 +116,30 @@ func (f *fakeStore) ListTracesByEvent(ctx context.Context, eventID string, limit
 	return f.listTracesResult, nil
 }
 
+func (f *fakeStore) ListSkills(ctx context.Context) ([]types.Skill, error) {
+	return nil, nil
+}
+
+func (f *fakeStore) GetSkill(ctx context.Context, id string) (types.Skill, error) {
+	return types.Skill{}, nil
+}
+
+func (f *fakeStore) GetSkillByName(ctx context.Context, name string) (types.Skill, error) {
+	return types.Skill{}, nil
+}
+
+func (f *fakeStore) CreateSkill(ctx context.Context, name, description, content string) (string, error) {
+	return "", nil
+}
+
+func (f *fakeStore) UpdateSkill(ctx context.Context, id, description, content string) error {
+	return nil
+}
+
+func (f *fakeStore) DeleteSkill(ctx context.Context, id string) error {
+	return nil
+}
+
 func TestService_GetRecipes_NoValidation(t *testing.T) {
 	t.Parallel()
 	f := &fakeStore{}

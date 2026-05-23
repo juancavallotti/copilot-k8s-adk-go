@@ -27,6 +27,8 @@ type RecipeRepo interface {
 	LogTrace(ctx context.Context, eventID string, occurredAt time.Time, data json.RawMessage) error
 	ListEvents(ctx context.Context, limit, offset int) ([]types.Event, error)
 	ListTracesByEvent(ctx context.Context, eventID string, limit, offset int) ([]types.Trace, error)
+	ListSkills(ctx context.Context) ([]types.Skill, error)
+	GetSkillByName(ctx context.Context, name string) (types.Skill, error)
 }
 
 type RepoFactory func() (RecipeRepo, error)
