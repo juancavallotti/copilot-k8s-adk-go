@@ -300,6 +300,28 @@ async function readAgentStream(
   }
 }
 
+function sameUIActions(
+  a: UIAction[] | undefined,
+  b: UIAction[] | undefined,
+): boolean {
+  const left = a ?? [];
+  const right = b ?? [];
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i++) {
+    const x = left[i];
+    const y = right[i];
+    if (x.type !== y.type) return false;
+    if (
+      x.type === "navigate_recipe" &&
+      y.type === "navigate_recipe" &&
+      x.recipeId !== y.recipeId
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function formatRawEvents(rawEvents: string[]): string {
   return rawEvents
     .map((event) => {
@@ -845,8 +867,40 @@ export function AgentChat() {
             ...parsed.uiActions,
           ]);
           const rawDebug = formatRawEvents(rawEvents);
-          setMessages((current) =>
-            current.map((message) =>
+          let mergedIntoPrev = false;
+          setMessages((current) => {
+            const idx = current.findIndex((m) => m.id === id);
+            if (idx > 0) {
+              const cur = current[idx];
+              const prev = current[idx - 1];
+              const noToolCalls =
+                cur.toolCalls == null || cur.toolCalls.length === 0;
+              // ADK occasionally re-emits a turn's final text as a fresh
+              // event after turnComplete already finalized the bubble. That
+              // second emission lands in a new (empty) bubble that we
+              // grow with the same text + uiActions. Detect that here and
+              // fold the duplicate into the previous bubble instead of
+              // showing the user the same message twice.
+              if (
+                noToolCalls &&
+                prev.role === "assistant" &&
+                prev.content === parsed.content &&
+                sameUIActions(prev.uiActions, uiActions)
+              ) {
+                mergedIntoPrev = true;
+                const next = current.slice();
+                next[idx - 1] = {
+                  ...prev,
+                  rawDebug:
+                    prev.rawDebug != null && prev.rawDebug !== ""
+                      ? `${prev.rawDebug}\n\n${rawDebug}`
+                      : rawDebug,
+                };
+                next.splice(idx, 1);
+                return next;
+              }
+            }
+            return current.map((message) =>
               message.id === id
                 ? {
                     ...message,
@@ -855,15 +909,17 @@ export function AgentChat() {
                     rawDebug,
                   }
                 : message,
-            ),
-          );
-          for (const action of uiActions) {
-            if (action.type === "navigate_recipe") {
-              void navigate(`/recipe/${encodeURIComponent(action.recipeId)}`);
-            } else if (action.type === "navigate_recipe_list") {
-              void navigate("/");
-            } else if (action.type === "refresh_current_screen") {
-              void revalidator.revalidate();
+            );
+          });
+          if (!mergedIntoPrev) {
+            for (const action of uiActions) {
+              if (action.type === "navigate_recipe") {
+                void navigate(`/recipe/${encodeURIComponent(action.recipeId)}`);
+              } else if (action.type === "navigate_recipe_list") {
+                void navigate("/");
+              } else if (action.type === "refresh_current_screen") {
+                void revalidator.revalidate();
+              }
             }
           }
           pendingNextBubble = true;
