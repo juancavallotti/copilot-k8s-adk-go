@@ -25,3 +25,6 @@ database/data/
 
 # Packaged Helm charts
 dist/
+
+# Generated deploy artifacts (e.g. ttl.sh values overrides) — may contain secrets
+temp/
