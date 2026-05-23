@@ -11,7 +11,6 @@ import (
 
 	"juancavallotti.com/recipes-agent/internal/config"
 	"juancavallotti.com/recipes-agent/internal/imagegen"
-	"juancavallotti.com/recipes-agent/internal/instruction"
 	"juancavallotti.com/recipes-agent/internal/observability"
 	"juancavallotti.com/recipes-agent/internal/tools/recipephotos"
 	"juancavallotti.com/recipes-agent/internal/tools/recipescli"
@@ -20,7 +19,10 @@ import (
 
 const AgentName = "recipe_copilot"
 
-func NewWith(ctx context.Context, cfg config.Config, llm model.LLM, imgGen imagegen.RecipeImageGenerator) (agent.Agent, error) {
+// NewWith builds an agent for one (chat model, image model) selection. The
+// systemPrompt has already been assembled at process startup from the template
+// file and the skill catalog; this function does not load it.
+func NewWith(ctx context.Context, cfg config.Config, systemPrompt string, llm model.LLM, imgGen imagegen.RecipeImageGenerator) (agent.Agent, error) {
 	cliTool, err := recipescli.NewTool()
 	if err != nil {
 		return nil, fmt.Errorf("create recipes cli tool: %w", err)
@@ -33,10 +35,6 @@ func NewWith(ctx context.Context, cfg config.Config, llm model.LLM, imgGen image
 	if err != nil {
 		return nil, fmt.Errorf("create UI actions tool: %w", err)
 	}
-	instruction, err := instruction.Load(cfg.InstructionPath)
-	if err != nil {
-		return nil, fmt.Errorf("load instruction: %w", err)
-	}
 
 	beforeModel, afterModel := observability.ModelCallbacks()
 	beforeTool, afterTool := observability.ToolCallbacks()
@@ -45,7 +43,7 @@ func NewWith(ctx context.Context, cfg config.Config, llm model.LLM, imgGen image
 		Name:        AgentName,
 		Model:       llm,
 		Description: "Recipe copilot that manages recipes by calling the installed recipes-cli.",
-		Instruction: instruction,
+		Instruction: systemPrompt,
 		BeforeModelCallbacks: append(
 			[]llmagent.BeforeModelCallback{newContextTrimCallback()},
 			beforeModel...,

@@ -13,9 +13,11 @@ import (
 	"google.golang.org/adk/session"
 
 	"juancavallotti.com/recipes-agent/internal/config"
+	"juancavallotti.com/recipes-agent/internal/instruction"
 	"juancavallotti.com/recipes-agent/internal/modelrouter"
 	"juancavallotti.com/recipes-agent/internal/observability"
 	"juancavallotti.com/recipes-agent/internal/server"
+	"juancavallotti.com/recipes-agent/internal/skills"
 )
 
 const sseWriteTimeout = 120 * time.Second
@@ -45,6 +47,17 @@ func Run() {
 
 	ctx := context.Background()
 
+	template, err := instruction.Load(cfg.InstructionPath)
+	if err != nil {
+		log.Fatalf("load instruction template: %v", err)
+	}
+	catalog, err := skills.NewLoader(skills.DefaultCLIBinary).Load(ctx)
+	if err != nil {
+		log.Fatalf("load skill catalog: %v", err)
+	}
+	systemPrompt := skills.Render(template, catalog)
+	slog.Info("agent.skills_loaded", "count", len(catalog.Skills))
+
 	registry, err := modelrouter.BuildRegistry(cfg)
 	if err != nil {
 		log.Fatalf("model registry: %v", err)
@@ -53,6 +66,7 @@ func Run() {
 	router := modelrouter.NewRouter(
 		registry,
 		cfg,
+		systemPrompt,
 		session.InMemoryService(),
 		memory.InMemoryService(),
 		artifact.InMemoryService(),

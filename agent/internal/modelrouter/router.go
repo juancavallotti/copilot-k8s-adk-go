@@ -34,6 +34,7 @@ func (s Selection) key() string { return s.AgentID + "|" + s.ImageID }
 type Router struct {
 	registry        *Registry
 	cfg             config.Config
+	systemPrompt    string
 	sessionService  session.Service
 	memoryService   memory.Service
 	artifactService artifact.Service
@@ -51,6 +52,7 @@ type cacheEntry struct {
 func NewRouter(
 	registry *Registry,
 	cfg config.Config,
+	systemPrompt string,
 	sessions session.Service,
 	mem memory.Service,
 	artifacts artifact.Service,
@@ -59,6 +61,7 @@ func NewRouter(
 	return &Router{
 		registry:        registry,
 		cfg:             cfg,
+		systemPrompt:    systemPrompt,
 		sessionService:  sessions,
 		memoryService:   mem,
 		artifactService: artifacts,
@@ -114,7 +117,7 @@ func (r *Router) build(ctx context.Context, sel Selection) (*adkrest.Server, err
 		return nil, fmt.Errorf("build image generator %q: %w", sel.ImageID, err)
 	}
 
-	a, err := copilot.NewWith(ctx, r.cfg, llm, imgGen)
+	a, err := copilot.NewWith(ctx, r.cfg, r.systemPrompt, llm, imgGen)
 	if err != nil {
 		return nil, fmt.Errorf("build agent for %s: %w", sel.key(), err)
 	}

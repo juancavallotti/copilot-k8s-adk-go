@@ -26,7 +26,7 @@ func TestLoadInstructionFromRepoRootWorkingDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if !strings.Contains(instruction, "generate_recipe_photos") {
-		t.Fatalf("instruction missing expected tool guidance: %q", instruction)
+	if !strings.Contains(instruction, "{{SKILL_CATALOG}}") || !strings.Contains(instruction, "{{CLI_HELP}}") {
+		t.Fatalf("instruction template missing expected placeholders: %q", instruction)
 	}
 }

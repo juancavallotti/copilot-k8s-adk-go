@@ -156,6 +156,7 @@ func buildTestRouter(t *testing.T) *modelrouter.Router {
 	return modelrouter.NewRouter(
 		registry,
 		cfg,
+		"test-system-prompt",
 		session.InMemoryService(),
 		memory.InMemoryService(),
 		artifact.InMemoryService(),
