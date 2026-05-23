@@ -37,6 +37,8 @@ type Config struct {
 
 	AnthropicAPIKey string
 	AnthropicModel  string
+
+	LogLevel string
 }
 
 func LoadDotenv() {
@@ -64,6 +66,7 @@ func Read() Config {
 		OpenAIImageModel:           os.Getenv("AGENT_OPENAI_IMAGE_MODEL"),
 		AnthropicAPIKey:            os.Getenv("ANTHROPIC_API_KEY"),
 		AnthropicModel:             os.Getenv("AGENT_ANTHROPIC_MODEL"),
+		LogLevel:                   os.Getenv("AGENT_LOG_LEVEL"),
 	}
 	if cfg.Addr == "" {
 		cfg.Addr = defaultAddr

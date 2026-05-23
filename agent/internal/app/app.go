@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 	"log"
+	"log/slog"
 	"net/http"
-	"os"
 	"time"
 
 	"google.golang.org/adk/artifact"
@@ -13,17 +13,16 @@ import (
 
 	"juancavallotti.com/recipes-agent/internal/config"
 	"juancavallotti.com/recipes-agent/internal/modelrouter"
+	"juancavallotti.com/recipes-agent/internal/observability"
 	"juancavallotti.com/recipes-agent/internal/server"
 )
 
 const sseWriteTimeout = 120 * time.Second
 
 func Run() {
-	log.SetOutput(os.Stdout)
-	log.SetFlags(log.LstdFlags | log.LUTC | log.Lmicroseconds)
-
 	config.LoadDotenv()
 	cfg := config.Read()
+	observability.Init(cfg.LogLevel)
 	if cfg.GeminiAPIKey == "" {
 		log.Fatal("GEMINI_API_KEY is required")
 	}
@@ -49,9 +48,11 @@ func Run() {
 		log.Fatalf("server: %v", err)
 	}
 
-	log.Printf("starting recipes agent on %s", cfg.Addr)
-	log.Printf("ADK API available under /agent (SSE: /agent/run_sse)")
-	log.Printf("registered agent models: %d, image models: %d", len(registry.AgentOptions), len(registry.ImageOptions))
+	slog.Info("agent.starting",
+		"addr", cfg.Addr,
+		"agent_models", len(registry.AgentOptions),
+		"image_models", len(registry.ImageOptions),
+	)
 	if err := http.ListenAndServe(cfg.Addr, handler); err != nil {
 		log.Fatalf("server: %v", err)
 	}

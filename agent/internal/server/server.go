@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"os/exec"
 	"strings"
@@ -104,11 +104,26 @@ func logRequests(next http.Handler) http.Handler {
 			status = http.StatusOK
 		}
 		if shouldLogRequest(r.URL.Path, status) {
-			message := recorder.bodyBytes.String()
-			if status >= http.StatusInternalServerError && message != "" {
-				log.Printf("http request: method=%s path=%q status=%d bytes=%d remote=%q duration=%s body=%q", r.Method, r.URL.Path, status, recorder.bytes, clientIP(r), time.Since(start).Round(time.Millisecond), message)
+			duration := time.Since(start).Round(time.Millisecond)
+			if status >= http.StatusInternalServerError {
+				slog.Error("http.request",
+					"method", r.Method,
+					"path", r.URL.Path,
+					"status", status,
+					"bytes", recorder.bytes,
+					"remote", clientIP(r),
+					"duration", duration,
+					"body", recorder.bodyBytes.String(),
+				)
 			} else {
-				log.Printf("http request: method=%s path=%q status=%d bytes=%d remote=%q duration=%s", r.Method, r.URL.Path, status, recorder.bytes, clientIP(r), time.Since(start).Round(time.Millisecond))
+				slog.Info("http.request",
+					"method", r.Method,
+					"path", r.URL.Path,
+					"status", status,
+					"bytes", recorder.bytes,
+					"remote", clientIP(r),
+					"duration", duration,
+				)
 			}
 		}
 	})
