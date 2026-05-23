@@ -25,6 +25,8 @@ type RecipeRepo interface {
 	DeleteRecipe(ctx context.Context, id string) error
 	ImportRecipe(ctx context.Context, recipe types.Recipe) error
 	LogTrace(ctx context.Context, eventID string, occurredAt time.Time, data json.RawMessage) error
+	ListEvents(ctx context.Context, limit, offset int) ([]types.Event, error)
+	ListTracesByEvent(ctx context.Context, eventID string, limit, offset int) ([]types.Trace, error)
 }
 
 type RepoFactory func() (RecipeRepo, error)
@@ -166,6 +168,10 @@ func (r Runner) Run(ctx context.Context, args []string) error {
 		return r.cmdImport(ctx, repo, args[1])
 	case "log-trace":
 		return r.cmdLogTrace(ctx, repo, args[1:])
+	case "list-events":
+		return r.cmdListEvents(ctx, repo, args[1:])
+	case "list-traces":
+		return r.cmdListTraces(ctx, repo, args[1:])
 	default:
 		r.usage()
 		return ErrUsage
@@ -207,6 +213,12 @@ Commands:
                                 Read JSON-lines from stdin; insert each as a trace row.
                                 event_id   <- named field (default: invocation_id).
                                 occurred_at <- named field, RFC3339 (default: time).
+  list-events [--limit N] [--offset N]
+                                Print events as JSON Lines (one JSON object per line),
+                                newest first. limit defaults to 50, max 200.
+  list-traces <event-id> [--limit N] [--offset N]
+                                Print traces for an event as JSON Lines, oldest first.
+                                limit defaults to 50, max 200.
   schema                        Print the JSON Schema for create and patch payloads.
 
 `

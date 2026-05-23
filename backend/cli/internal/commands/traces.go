@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -77,6 +78,91 @@ func (r Runner) cmdLogTrace(ctx context.Context, repo RecipeRepo, args []string)
 	}
 	fmt.Fprintf(r.stderr, "log-trace: inserted=%d skipped=%d\n", inserted, skipped)
 	return nil
+}
+
+func (r Runner) cmdListEvents(ctx context.Context, repo RecipeRepo, args []string) error {
+	const usage = "usage: recipes-cli list-events [--limit N] [--offset N]"
+	limit, offset, err := parsePagingFlags(args, usage)
+	if err != nil {
+		if err == errBadPagingUsage {
+			return r.usageError(usage)
+		}
+		return err
+	}
+	events, err := repo.ListEvents(ctx, limit, offset)
+	if err != nil {
+		return err
+	}
+	enc := json.NewEncoder(r.stdout)
+	for _, e := range events {
+		if err := enc.Encode(e); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r Runner) cmdListTraces(ctx context.Context, repo RecipeRepo, args []string) error {
+	const usage = "usage: recipes-cli list-traces <event-id> [--limit N] [--offset N]"
+	if len(args) < 1 {
+		return r.usageError(usage)
+	}
+	eventID := strings.TrimSpace(args[0])
+	if eventID == "" {
+		return r.usageError(usage)
+	}
+	limit, offset, err := parsePagingFlags(args[1:], usage)
+	if err != nil {
+		if err == errBadPagingUsage {
+			return r.usageError(usage)
+		}
+		return err
+	}
+	traces, err := repo.ListTracesByEvent(ctx, eventID, limit, offset)
+	if err != nil {
+		return err
+	}
+	enc := json.NewEncoder(r.stdout)
+	for _, t := range traces {
+		if err := enc.Encode(t); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var errBadPagingUsage = fmt.Errorf("bad paging usage")
+
+func parsePagingFlags(args []string, usage string) (limit, offset int, err error) {
+	limit = 50
+	offset = 0
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--limit":
+			if i+1 >= len(args) {
+				return 0, 0, errBadPagingUsage
+			}
+			n, perr := strconv.Atoi(args[i+1])
+			if perr != nil || n <= 0 {
+				return 0, 0, fmt.Errorf("%s: --limit must be a positive integer", usage)
+			}
+			limit = n
+			i++
+		case "--offset":
+			if i+1 >= len(args) {
+				return 0, 0, errBadPagingUsage
+			}
+			n, perr := strconv.Atoi(args[i+1])
+			if perr != nil || n < 0 {
+				return 0, 0, fmt.Errorf("%s: --offset must be a non-negative integer", usage)
+			}
+			offset = n
+			i++
+		default:
+			return 0, 0, errBadPagingUsage
+		}
+	}
+	return limit, offset, nil
 }
 
 func readStringField(raw map[string]json.RawMessage, field string) (string, bool) {

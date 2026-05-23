@@ -19,10 +19,12 @@ func (h *Handlers) ListEvents(c *gin.Context) {
 	c.JSON(http.StatusOK, events)
 }
 
-// ListEventTraces handles GET /events/:event_id/traces
+// ListEventTraces handles GET /events/:event_id/traces?limit=&offset=
 func (h *Handlers) ListEventTraces(c *gin.Context) {
 	eventID := c.Param("event_id")
-	traces, err := h.Repo.ListTracesByEvent(c.Request.Context(), eventID)
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	traces, err := h.Repo.ListTracesByEvent(c.Request.Context(), eventID, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

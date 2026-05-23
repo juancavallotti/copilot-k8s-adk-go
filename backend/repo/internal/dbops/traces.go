@@ -75,7 +75,8 @@ LIMIT $1 OFFSET $2`, limit, offset)
 }
 
 // ListTracesByEvent returns traces for an event in chronological order.
-func (s *Store) ListTracesByEvent(ctx context.Context, eventID string) ([]types.Trace, error) {
+// limit caps the page size; offset is the row offset.
+func (s *Store) ListTracesByEvent(ctx context.Context, eventID string, limit, offset int) ([]types.Trace, error) {
 	if s.db == nil {
 		return nil, errNilDB
 	}
@@ -86,7 +87,8 @@ func (s *Store) ListTracesByEvent(ctx context.Context, eventID string) ([]types.
 SELECT id::text, event_id, occurred_at, data
 FROM traces
 WHERE event_id = $1
-ORDER BY occurred_at, id`, eventID)
+ORDER BY occurred_at, id
+LIMIT $2 OFFSET $3`, eventID, limit, offset)
 	if err != nil {
 		return nil, err
 	}

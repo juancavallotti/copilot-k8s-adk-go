@@ -200,7 +200,7 @@ func TestStore_ListEvents_returnsRows(t *testing.T) {
 func TestStore_ListTracesByEvent_nilDB(t *testing.T) {
 	t.Parallel()
 	s := &Store{db: nil}
-	if _, err := s.ListTracesByEvent(context.Background(), "inv-1"); !errors.Is(err, errNilDB) {
+	if _, err := s.ListTracesByEvent(context.Background(), "inv-1", 50, 0); !errors.Is(err, errNilDB) {
 		t.Fatalf("err = %v, want errNilDB", err)
 	}
 }
@@ -219,11 +219,11 @@ func TestStore_ListTracesByEvent_returnsRows(t *testing.T) {
 	payload := []byte(`{"msg":"agent.event"}`)
 
 	mock.ExpectQuery("FROM traces").
-		WithArgs("inv-a").
+		WithArgs("inv-a", 50, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "event_id", "occurred_at", "data"}).
 			AddRow(tid, "inv-a", ts, payload))
 
-	out, err := s.ListTracesByEvent(context.Background(), "inv-a")
+	out, err := s.ListTracesByEvent(context.Background(), "inv-a", 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

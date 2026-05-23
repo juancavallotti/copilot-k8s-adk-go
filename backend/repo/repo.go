@@ -68,8 +68,8 @@ func (r *Repo) ListEvents(ctx context.Context, limit, offset int) ([]types.Event
 	return r.service.ListEvents(ctx, limit, offset)
 }
 
-func (r *Repo) ListTracesByEvent(ctx context.Context, eventID string) ([]types.Trace, error) {
-	return r.service.ListTracesByEvent(ctx, eventID)
+func (r *Repo) ListTracesByEvent(ctx context.Context, eventID string, limit, offset int) ([]types.Trace, error) {
+	return r.service.ListTracesByEvent(ctx, eventID, limit, offset)
 }
 
 func NewRepo() (*Repo, error) {

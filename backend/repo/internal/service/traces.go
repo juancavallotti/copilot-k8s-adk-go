@@ -39,9 +39,15 @@ func (s *Service) ListEvents(ctx context.Context, limit, offset int) ([]types.Ev
 	return s.store.ListEvents(ctx, limit, offset)
 }
 
-func (s *Service) ListTracesByEvent(ctx context.Context, eventID string) ([]types.Trace, error) {
+func (s *Service) ListTracesByEvent(ctx context.Context, eventID string, limit, offset int) ([]types.Trace, error) {
 	if strings.TrimSpace(eventID) == "" {
 		return nil, ErrEmptyEventID
 	}
-	return s.store.ListTracesByEvent(ctx, eventID)
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return s.store.ListTracesByEvent(ctx, eventID, limit, offset)
 }

@@ -34,6 +34,8 @@ type fakeStore struct {
 	listEventsResult    []types.Event
 	listTracesCalls     int
 	listTracesEventID   string
+	listTracesLimit     int
+	listTracesOffset    int
 	listTracesResult    []types.Trace
 
 	createErr         error
@@ -106,9 +108,11 @@ func (f *fakeStore) ListEvents(ctx context.Context, limit, offset int) ([]types.
 	return f.listEventsResult, nil
 }
 
-func (f *fakeStore) ListTracesByEvent(ctx context.Context, eventID string) ([]types.Trace, error) {
+func (f *fakeStore) ListTracesByEvent(ctx context.Context, eventID string, limit, offset int) ([]types.Trace, error) {
 	f.listTracesCalls++
 	f.listTracesEventID = eventID
+	f.listTracesLimit = limit
+	f.listTracesOffset = offset
 	return f.listTracesResult, nil
 }
 

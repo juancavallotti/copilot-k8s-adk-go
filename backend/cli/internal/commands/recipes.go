@@ -105,6 +105,7 @@ func (r Runner) cmdCreate(ctx context.Context, repo RecipeRepo, path string, ret
 	if err != nil {
 		return err
 	}
+	stripPhotoContents(&created)
 	return r.writeIndentedJSON(created)
 }
 
@@ -134,11 +135,17 @@ func (r Runner) cmdPatch(ctx context.Context, repo RecipeRepo, id string, path s
 	if err != nil {
 		return err
 	}
+	stripPhotoContents(&updated)
 	return r.writeIndentedJSON(updated)
 }
 
 func (r Runner) cmdDelete(ctx context.Context, repo RecipeRepo, id string) error {
-	return repo.DeleteRecipe(ctx, strings.TrimSpace(id))
+	id = strings.TrimSpace(id)
+	if err := repo.DeleteRecipe(ctx, id); err != nil {
+		return err
+	}
+	fmt.Fprintf(r.stdout, "Successfully deleted recipe %s\n", id)
+	return nil
 }
 
 func (r Runner) cmdImport(ctx context.Context, repo RecipeRepo, path string) error {
@@ -155,6 +162,7 @@ func (r Runner) cmdImport(ctx context.Context, repo RecipeRepo, path string) err
 	sc.Buffer(buf, max)
 
 	lineNum := 0
+	imported := 0
 	for sc.Scan() {
 		lineNum++
 		line := strings.TrimSpace(sc.Text())
@@ -168,9 +176,11 @@ func (r Runner) cmdImport(ctx context.Context, repo RecipeRepo, path string) err
 		if err := repo.ImportRecipe(ctx, rec); err != nil {
 			return fmt.Errorf("line %d: %w", lineNum, err)
 		}
+		imported++
 	}
 	if err := sc.Err(); err != nil {
 		return err
 	}
+	fmt.Fprintf(r.stdout, "Successfully imported %d recipes\n", imported)
 	return nil
 }

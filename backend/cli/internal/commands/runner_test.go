@@ -43,6 +43,19 @@ type fakeRepo struct {
 	logTraceCalls    int
 	logTraceEntries  []traceEntry
 	logTraceErr      error
+
+	listEventsCalls  int
+	listEventsLimit  int
+	listEventsOffset int
+	listEventsResult []types.Event
+	listEventsErr    error
+
+	listTracesCalls    int
+	listTracesEventID  string
+	listTracesLimit    int
+	listTracesOffset   int
+	listTracesResult   []types.Trace
+	listTracesErr      error
 }
 
 type traceEntry struct {
@@ -126,6 +139,21 @@ func (f *fakeRepo) LogTrace(ctx context.Context, eventID string, occurredAt time
 	f.logTraceCalls++
 	f.logTraceEntries = append(f.logTraceEntries, traceEntry{eventID: eventID, occurredAt: occurredAt, data: data})
 	return f.logTraceErr
+}
+
+func (f *fakeRepo) ListEvents(ctx context.Context, limit, offset int) ([]types.Event, error) {
+	f.listEventsCalls++
+	f.listEventsLimit = limit
+	f.listEventsOffset = offset
+	return f.listEventsResult, f.listEventsErr
+}
+
+func (f *fakeRepo) ListTracesByEvent(ctx context.Context, eventID string, limit, offset int) ([]types.Trace, error) {
+	f.listTracesCalls++
+	f.listTracesEventID = eventID
+	f.listTracesLimit = limit
+	f.listTracesOffset = offset
+	return f.listTracesResult, f.listTracesErr
 }
 
 func testRunner(stdin string, repo RecipeRepo, factoryCalls *int) (Runner, *bytes.Buffer, *bytes.Buffer) {
@@ -403,7 +431,7 @@ func TestRun_AddPhotoReadsBase64FromStdin(t *testing.T) {
 	}
 }
 
-func TestRun_AddPhotoWithJSONFlagPrintsUpdatedRecipe(t *testing.T) {
+func TestRun_AddPhotoWithJSONFlagPrintsUpdatedRecipeWithoutImageContents(t *testing.T) {
 	repo := &fakeRepo{}
 	var factoryCalls int
 	r, stdout, _ := testRunner(" aW1n\n", repo, &factoryCalls)
@@ -417,6 +445,9 @@ func TestRun_AddPhotoWithJSONFlagPrintsUpdatedRecipe(t *testing.T) {
 	}
 	if out.ID != "recipe-1" || len(out.Photos) != 1 {
 		t.Fatalf("output recipe = %#v", out)
+	}
+	if out.Photos[0].ImageBase64 != "" {
+		t.Fatalf("photo image_base64 should be stripped; got = %q", out.Photos[0].ImageBase64)
 	}
 }
 
@@ -473,7 +504,7 @@ func TestRun_DeletePhotoWithJSONFlagPrintsUpdatedRecipe(t *testing.T) {
 	}
 }
 
-func TestRun_DeleteRemovesRecipe(t *testing.T) {
+func TestRun_DeleteRemovesRecipeAndPrintsSuccessSummary(t *testing.T) {
 	repo := &fakeRepo{}
 	var factoryCalls int
 	r, stdout, stderr := testRunner("", repo, &factoryCalls)
@@ -487,8 +518,8 @@ func TestRun_DeleteRemovesRecipe(t *testing.T) {
 	if repo.deletedID != "recipe-1" {
 		t.Fatalf("deleted id = %q, want recipe-1", repo.deletedID)
 	}
-	if stdout.Len() != 0 {
-		t.Fatalf("stdout = %q, want empty", stdout.String())
+	if got := stdout.String(); got != "Successfully deleted recipe recipe-1\n" {
+		t.Fatalf("stdout = %q", got)
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
@@ -517,7 +548,7 @@ func TestRun_SetFeaturedPhotoMarksPhotoAndPrintsSuccessSummary(t *testing.T) {
 	}
 }
 
-func TestRun_SetFeaturedPhotoWithJSONFlagPrintsUpdatedRecipe(t *testing.T) {
+func TestRun_SetFeaturedPhotoWithJSONFlagPrintsUpdatedRecipeWithoutImageContents(t *testing.T) {
 	repo := &fakeRepo{}
 	var factoryCalls int
 	r, stdout, _ := testRunner("", repo, &factoryCalls)
@@ -532,12 +563,15 @@ func TestRun_SetFeaturedPhotoWithJSONFlagPrintsUpdatedRecipe(t *testing.T) {
 	if out.ID != "recipe-1" || len(out.Photos) != 1 || !out.Photos[0].Featured {
 		t.Fatalf("output recipe = %#v", out)
 	}
+	if out.Photos[0].ImageBase64 != "" {
+		t.Fatalf("photo image_base64 should be stripped; got = %q", out.Photos[0].ImageBase64)
+	}
 }
 
-func TestRun_ImportReadsJSONLines(t *testing.T) {
+func TestRun_ImportReadsJSONLinesAndPrintsSuccessSummary(t *testing.T) {
 	repo := &fakeRepo{}
 	var factoryCalls int
-	r, _, _ := testRunner("{\"id\":\"1\",\"name\":\"One\"}\n\n{\"id\":\"2\",\"name\":\"Two\"}\n", repo, &factoryCalls)
+	r, stdout, _ := testRunner("{\"id\":\"1\",\"name\":\"One\"}\n\n{\"id\":\"2\",\"name\":\"Two\"}\n", repo, &factoryCalls)
 
 	if err := r.Run(context.Background(), []string{"import", "-"}); err != nil {
 		t.Fatalf("Run import: %v", err)
@@ -547,6 +581,9 @@ func TestRun_ImportReadsJSONLines(t *testing.T) {
 	}
 	if repo.importedRecipes[0].ID != "1" || repo.importedRecipes[1].ID != "2" {
 		t.Fatalf("imported recipes = %#v", repo.importedRecipes)
+	}
+	if got := stdout.String(); got != "Successfully imported 2 recipes\n" {
+		t.Fatalf("stdout = %q", got)
 	}
 }
 

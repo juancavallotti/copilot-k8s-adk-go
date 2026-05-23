@@ -129,7 +129,7 @@ func TestService_ListTracesByEvent_rejectsEmptyEventID(t *testing.T) {
 	t.Parallel()
 	f := &fakeStore{}
 	s := &Service{store: f}
-	_, err := s.ListTracesByEvent(context.Background(), "")
+	_, err := s.ListTracesByEvent(context.Background(), "", 10, 0)
 	if !errors.Is(err, ErrEmptyEventID) {
 		t.Fatalf("err = %v, want ErrEmptyEventID", err)
 	}
@@ -144,7 +144,7 @@ func TestService_ListTracesByEvent_forwardsToStore(t *testing.T) {
 	f := &fakeStore{listTracesResult: want}
 	s := &Service{store: f}
 
-	got, err := s.ListTracesByEvent(context.Background(), "inv-a")
+	got, err := s.ListTracesByEvent(context.Background(), "inv-a", 25, 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,5 +153,39 @@ func TestService_ListTracesByEvent_forwardsToStore(t *testing.T) {
 	}
 	if f.listTracesEventID != "inv-a" {
 		t.Fatalf("forwarded eventID = %q", f.listTracesEventID)
+	}
+	if f.listTracesLimit != 25 || f.listTracesOffset != 5 {
+		t.Fatalf("forwarded paging = (limit=%d, offset=%d), want (25, 5)", f.listTracesLimit, f.listTracesOffset)
+	}
+}
+
+func TestService_ListTracesByEvent_defaultsLimitWhenInvalid(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		limit   int
+		offset  int
+		wantLim int
+		wantOff int
+	}{
+		{"zero limit defaults to 50", 0, 0, 50, 0},
+		{"negative limit defaults to 50", -5, 0, 50, 0},
+		{"over-cap limit defaults to 50", 201, 0, 50, 0},
+		{"in-range limit kept", 100, 7, 100, 7},
+		{"negative offset clamped to 0", 10, -3, 10, 0},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := &fakeStore{}
+			s := &Service{store: f}
+			if _, err := s.ListTracesByEvent(context.Background(), "inv-a", tc.limit, tc.offset); err != nil {
+				t.Fatal(err)
+			}
+			if f.listTracesLimit != tc.wantLim || f.listTracesOffset != tc.wantOff {
+				t.Fatalf("got (limit=%d, offset=%d), want (%d, %d)", f.listTracesLimit, f.listTracesOffset, tc.wantLim, tc.wantOff)
+			}
+		})
 	}
 }

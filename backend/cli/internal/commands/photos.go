@@ -36,6 +36,7 @@ func (r Runner) cmdAddPhoto(ctx context.Context, repo RecipeRepo, recipeID strin
 	if err != nil {
 		return err
 	}
+	stripPhotoContents(&updated)
 	return r.writeIndentedJSON(updated)
 }
 
@@ -76,6 +77,7 @@ func (r Runner) cmdDeletePhoto(ctx context.Context, repo RecipeRepo, recipeID st
 	if err != nil {
 		return err
 	}
+	stripPhotoContents(&updated)
 	return r.writeIndentedJSON(updated)
 }
 
@@ -93,5 +95,6 @@ func (r Runner) cmdSetFeaturedPhoto(ctx context.Context, repo RecipeRepo, recipe
 	if err != nil {
 		return err
 	}
+	stripPhotoContents(&updated)
 	return r.writeIndentedJSON(updated)
 }
