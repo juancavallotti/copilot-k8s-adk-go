@@ -37,6 +37,16 @@ function formatRange(startedAt: string, endedAt: string): string {
   return `${start.toLocaleString()} → ${end.toLocaleString()}`;
 }
 
+function formatDuration(startedAt: string, endedAt: string): string {
+  const ms = new Date(endedAt).getTime() - new Date(startedAt).getTime();
+  if (ms < 0) return "";
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(2)}s`;
+  const m = Math.floor(ms / 60_000);
+  const s = Math.round((ms % 60_000) / 1000);
+  return `${m}m ${s}s`;
+}
+
 function TracesIndexContent() {
   const loaderData = useLoaderData<typeof loader>();
   const { state, dispatch } = useTracesListState();
@@ -121,9 +131,14 @@ function TracesIndexContent() {
                     {formatRange(evt.started_at, evt.ended_at)}
                   </p>
                 </div>
-                <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
-                  {evt.trace_count} traces
-                </span>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                    {formatDuration(evt.started_at, evt.ended_at)}
+                  </span>
+                  <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                    {evt.trace_count} traces
+                  </span>
+                </div>
               </Link>
             </li>
           ))}
