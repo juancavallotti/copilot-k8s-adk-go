@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"io"
 	"log"
 	"log/slog"
 	"net/http"
@@ -22,7 +23,22 @@ const sseWriteTimeout = 120 * time.Second
 func Run() {
 	config.LoadDotenv()
 	cfg := config.Read()
-	observability.Init(cfg.LogLevel)
+
+	var traceSinkWriter io.Writer
+	if cfg.TracesCLI != "" {
+		sink, err := observability.StartTraceSink(cfg.TracesCLI)
+		if err != nil {
+			log.Printf("trace sink disabled: %v", err)
+		} else {
+			traceSinkWriter = sink.Writer()
+			defer func() {
+				if err := sink.Close(); err != nil {
+					log.Printf("trace sink close: %v", err)
+				}
+			}()
+		}
+	}
+	observability.Init(cfg.LogLevel, traceSinkWriter)
 	if cfg.GeminiAPIKey == "" {
 		log.Fatal("GEMINI_API_KEY is required")
 	}
