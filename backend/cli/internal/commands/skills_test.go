@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	repo "juancavallotti.com/recipes-repo"
 	types "juancavallotti.com/recipe-types"
+	repo "juancavallotti.com/recipes-repo"
 )
 
 func TestRun_ListSkillsPrintsJSONL(t *testing.T) {

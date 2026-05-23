@@ -40,9 +40,9 @@ type fakeRepo struct {
 
 	importedRecipes []types.Recipe
 
-	logTraceCalls    int
-	logTraceEntries  []traceEntry
-	logTraceErr      error
+	logTraceCalls   int
+	logTraceEntries []traceEntry
+	logTraceErr     error
 
 	listEventsCalls  int
 	listEventsLimit  int
@@ -50,19 +50,19 @@ type fakeRepo struct {
 	listEventsResult []types.Event
 	listEventsErr    error
 
-	listTracesCalls    int
-	listTracesEventID  string
-	listTracesLimit    int
-	listTracesOffset   int
-	listTracesResult   []types.Trace
-	listTracesErr      error
+	listTracesCalls   int
+	listTracesEventID string
+	listTracesLimit   int
+	listTracesOffset  int
+	listTracesResult  []types.Trace
+	listTracesErr     error
 
 	listSkillsCalls  int
 	listSkillsResult []types.Skill
 	listSkillsErr    error
 
-	getSkillByNameCalls int
-	getSkillByNameArg   string
+	getSkillByNameCalls  int
+	getSkillByNameArg    string
 	getSkillByNameResult types.Skill
 	getSkillByNameErr    error
 }
@@ -176,10 +176,10 @@ func (f *fakeRepo) GetSkillByName(ctx context.Context, name string) (types.Skill
 	return f.getSkillByNameResult, f.getSkillByNameErr
 }
 
-func testRunner(stdin string, repo RecipeRepo, factoryCalls *int) (Runner, *bytes.Buffer, *bytes.Buffer) {
+func testRunner(stdin string, repo CommandRepo, factoryCalls *int) (Runner, *bytes.Buffer, *bytes.Buffer) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	r := NewRunner(strings.NewReader(stdin), &stdout, &stderr, func() (RecipeRepo, error) {
+	r := NewRunner(strings.NewReader(stdin), &stdout, &stderr, func() (CommandRepo, error) {
 		*factoryCalls++
 		return repo, nil
 	})

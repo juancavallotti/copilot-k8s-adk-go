@@ -24,14 +24,26 @@ type RecipeRepo interface {
 	SetFeaturedRecipePhoto(ctx context.Context, recipeID string, photoID string) error
 	DeleteRecipe(ctx context.Context, id string) error
 	ImportRecipe(ctx context.Context, recipe types.Recipe) error
+}
+
+type TraceRepo interface {
 	LogTrace(ctx context.Context, eventID string, occurredAt time.Time, data json.RawMessage) error
 	ListEvents(ctx context.Context, limit, offset int) ([]types.Event, error)
 	ListTracesByEvent(ctx context.Context, eventID string, limit, offset int) ([]types.Trace, error)
+}
+
+type SkillRepo interface {
 	ListSkills(ctx context.Context) ([]types.Skill, error)
 	GetSkillByName(ctx context.Context, name string) (types.Skill, error)
 }
 
-type RepoFactory func() (RecipeRepo, error)
+type CommandRepo interface {
+	RecipeRepo
+	TraceRepo
+	SkillRepo
+}
+
+type RepoFactory func() (CommandRepo, error)
 
 type Runner struct {
 	stdin       io.Reader

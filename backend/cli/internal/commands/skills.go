@@ -9,7 +9,7 @@ import (
 	repo "juancavallotti.com/recipes-repo"
 )
 
-func (r Runner) cmdListSkills(ctx context.Context, rp RecipeRepo) error {
+func (r Runner) cmdListSkills(ctx context.Context, rp SkillRepo) error {
 	skills, err := rp.ListSkills(ctx)
 	if err != nil {
 		return err
@@ -27,7 +27,7 @@ func (r Runner) cmdListSkills(ctx context.Context, rp RecipeRepo) error {
 	return nil
 }
 
-func (r Runner) cmdLoadSkill(ctx context.Context, rp RecipeRepo, name string) error {
+func (r Runner) cmdLoadSkill(ctx context.Context, rp SkillRepo, name string) error {
 	sk, err := rp.GetSkillByName(ctx, name)
 	if err != nil {
 		if errors.Is(err, repo.ErrSkillNotFound) {

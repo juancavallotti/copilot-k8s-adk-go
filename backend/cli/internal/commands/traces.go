@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func (r Runner) cmdLogTrace(ctx context.Context, repo RecipeRepo, args []string) error {
+func (r Runner) cmdLogTrace(ctx context.Context, repo TraceRepo, args []string) error {
 	eventField := "invocation_id"
 	timeField := "time"
 	usage := "usage: recipes-cli log-trace [--event-id-field <name>] [--time-field <name>]"
@@ -80,7 +80,7 @@ func (r Runner) cmdLogTrace(ctx context.Context, repo RecipeRepo, args []string)
 	return nil
 }
 
-func (r Runner) cmdListEvents(ctx context.Context, repo RecipeRepo, args []string) error {
+func (r Runner) cmdListEvents(ctx context.Context, repo TraceRepo, args []string) error {
 	const usage = "usage: recipes-cli list-events [--limit N] [--offset N]"
 	limit, offset, err := parsePagingFlags(args, usage)
 	if err != nil {
@@ -102,7 +102,7 @@ func (r Runner) cmdListEvents(ctx context.Context, repo RecipeRepo, args []strin
 	return nil
 }
 
-func (r Runner) cmdListTraces(ctx context.Context, repo RecipeRepo, args []string) error {
+func (r Runner) cmdListTraces(ctx context.Context, repo TraceRepo, args []string) error {
 	const usage = "usage: recipes-cli list-traces <event-id> [--limit N] [--offset N]"
 	if len(args) < 1 {
 		return r.usageError(usage)

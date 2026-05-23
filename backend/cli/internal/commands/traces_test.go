@@ -58,12 +58,12 @@ func TestRun_LogTraceSkipsLinesMissingFields(t *testing.T) {
 	repo := &fakeRepo{}
 	var factoryCalls int
 	stdin := strings.Join([]string{
-		`{"msg":"agent.starting","time":"2026-05-22T10:00:00Z"}`,           // no invocation_id
+		`{"msg":"agent.starting","time":"2026-05-22T10:00:00Z"}`,                        // no invocation_id
 		`{"time":"2026-05-22T10:00:01Z","msg":"agent.event","invocation_id":"inv-xyz"}`, // good
 		`{"msg":"agent.event","invocation_id":"inv-notime"}`,                            // no time
 		`{"time":"bogus","invocation_id":"inv-badtime"}`,                                // unparseable time
-		`not even json`,                                                                 // bad json
-		``,                                                                              // blank
+		`not even json`, // bad json
+		``,              // blank
 	}, "\n") + "\n"
 	r, _, stderr := testRunner(stdin, repo, &factoryCalls)
 

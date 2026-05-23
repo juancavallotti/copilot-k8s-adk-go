@@ -25,7 +25,7 @@ func loadDotenv() {
 func main() {
 	loadDotenv()
 
-	runner := commands.NewRunner(os.Stdin, os.Stdout, os.Stderr, func() (commands.RecipeRepo, error) {
+	runner := commands.NewRunner(os.Stdin, os.Stdout, os.Stderr, func() (commands.CommandRepo, error) {
 		return repo.NewRepo()
 	})
 	if err := runner.Run(context.Background(), os.Args[1:]); err != nil {
