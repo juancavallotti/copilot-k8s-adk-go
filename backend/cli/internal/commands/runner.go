@@ -2,9 +2,11 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	types "juancavallotti.com/recipe-types"
 )
@@ -22,6 +24,7 @@ type RecipeRepo interface {
 	SetFeaturedRecipePhoto(ctx context.Context, recipeID string, photoID string) error
 	DeleteRecipe(ctx context.Context, id string) error
 	ImportRecipe(ctx context.Context, recipe types.Recipe) error
+	LogTrace(ctx context.Context, eventID string, occurredAt time.Time, data json.RawMessage) error
 }
 
 type RepoFactory func() (RecipeRepo, error)
@@ -120,6 +123,8 @@ func (r Runner) Run(ctx context.Context, args []string) error {
 			return r.usageError("usage: recipes-cli import <path>")
 		}
 		return r.cmdImport(ctx, repo, args[1])
+	case "log-trace":
+		return r.cmdLogTrace(ctx, repo, args[1:])
 	default:
 		r.usage()
 		return ErrUsage
@@ -146,6 +151,10 @@ Commands:
   set-featured-photo <id> <photo-id>
                                 Mark a recipe photo as featured.
   import <path>                 Read JSONL from file (use "-" for stdin); upsert each recipe.
+  log-trace [--event-id-field <name>] [--time-field <name>]
+                                Read JSON-lines from stdin; insert each as a trace row.
+                                event_id   <- named field (default: invocation_id).
+                                occurred_at <- named field, RFC3339 (default: time).
   schema                        Print the JSON Schema for create and patch payloads.
 
 `)

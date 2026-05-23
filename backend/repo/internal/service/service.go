@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"time"
 
 	types "juancavallotti.com/recipe-types"
 
@@ -19,6 +21,10 @@ type recipeStore interface {
 	DeleteRecipePhoto(ctx context.Context, recipeID string, photoID string) error
 	SetFeaturedRecipePhoto(ctx context.Context, recipeID string, photoID string) error
 	DeleteRecipe(ctx context.Context, id string) error
+
+	InsertTrace(ctx context.Context, eventID string, occurredAt time.Time, data json.RawMessage) error
+	ListEvents(ctx context.Context, limit, offset int) ([]types.Event, error)
+	ListTracesByEvent(ctx context.Context, eventID string) ([]types.Trace, error)
 }
 
 type Service struct {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	types "juancavallotti.com/recipe-types"
 )
@@ -38,6 +39,16 @@ type fakeRepo struct {
 	featuredPhotoID       string
 
 	importedRecipes []types.Recipe
+
+	logTraceCalls    int
+	logTraceEntries  []traceEntry
+	logTraceErr      error
+}
+
+type traceEntry struct {
+	eventID    string
+	occurredAt time.Time
+	data       json.RawMessage
 }
 
 func (f *fakeRepo) GetRecipes(ctx context.Context) ([]types.Recipe, error) {
@@ -109,6 +120,12 @@ func (f *fakeRepo) SetFeaturedRecipePhoto(ctx context.Context, recipeID string, 
 func (f *fakeRepo) ImportRecipe(ctx context.Context, recipe types.Recipe) error {
 	f.importedRecipes = append(f.importedRecipes, recipe)
 	return nil
+}
+
+func (f *fakeRepo) LogTrace(ctx context.Context, eventID string, occurredAt time.Time, data json.RawMessage) error {
+	f.logTraceCalls++
+	f.logTraceEntries = append(f.logTraceEntries, traceEntry{eventID: eventID, occurredAt: occurredAt, data: data})
+	return f.logTraceErr
 }
 
 func testRunner(stdin string, repo RecipeRepo, factoryCalls *int) (Runner, *bytes.Buffer, *bytes.Buffer) {
