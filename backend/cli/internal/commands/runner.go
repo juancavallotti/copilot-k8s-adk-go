@@ -47,8 +47,14 @@ func NewRunner(stdin io.Reader, stdout io.Writer, stderr io.Writer, repoFactory 
 
 func (r Runner) Run(ctx context.Context, args []string) error {
 	if len(args) < 1 {
-		r.usage()
-		return ErrUsage
+		r.printHelp()
+		return nil
+	}
+
+	switch args[0] {
+	case "-h", "--help", "help":
+		r.printHelp()
+		return nil
 	}
 
 	if args[0] == "schema" {
@@ -166,8 +172,15 @@ func (r Runner) Run(ctx context.Context, args []string) error {
 	}
 }
 
+func (r Runner) printHelp() {
+	fmt.Fprint(r.stdout, helpText)
+}
+
 func (r Runner) usage() {
-	fmt.Fprintf(r.stderr, `recipes-cli — recipe backup and inspection (uses DB_* from .env like the API).
+	fmt.Fprint(r.stderr, helpText)
+}
+
+const helpText = `recipes-cli — recipe backup and inspection (uses DB_* from .env like the API).
 
 Update commands print a short success summary by default. Pass --json to print the
 full updated recipe as indented JSON instead (useful for piping into other tools).
@@ -196,8 +209,7 @@ Commands:
                                 occurred_at <- named field, RFC3339 (default: time).
   schema                        Print the JSON Schema for create and patch payloads.
 
-`)
-}
+`
 
 func (r Runner) usageError(msg string) error {
 	fmt.Fprintln(r.stderr, msg)

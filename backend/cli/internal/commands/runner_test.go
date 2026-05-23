@@ -138,19 +138,45 @@ func testRunner(stdin string, repo RecipeRepo, factoryCalls *int) (Runner, *byte
 	return r, &stdout, &stderr
 }
 
-func TestRun_NoArgsWritesUsageAndDoesNotOpenRepo(t *testing.T) {
+func TestRun_NoArgsPrintsHelpToStdoutAndDoesNotOpenRepo(t *testing.T) {
 	var factoryCalls int
-	r, _, stderr := testRunner("", &fakeRepo{}, &factoryCalls)
+	r, stdout, stderr := testRunner("", &fakeRepo{}, &factoryCalls)
 
 	err := r.Run(context.Background(), nil)
-	if !errors.Is(err, ErrUsage) {
-		t.Fatalf("err = %v, want ErrUsage", err)
+	if err != nil {
+		t.Fatalf("err = %v, want nil", err)
 	}
 	if factoryCalls != 0 {
 		t.Fatalf("repo factory calls = %d, want 0", factoryCalls)
 	}
-	if !strings.Contains(stderr.String(), "Commands:") {
-		t.Fatalf("stderr = %q, want usage", stderr.String())
+	if !strings.Contains(stdout.String(), "Commands:") {
+		t.Fatalf("stdout = %q, want help", stdout.String())
+	}
+	if stderr.String() != "" {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRun_HelpFlagsPrintHelpToStdout(t *testing.T) {
+	for _, flag := range []string{"-h", "--help", "help"} {
+		t.Run(flag, func(t *testing.T) {
+			var factoryCalls int
+			r, stdout, stderr := testRunner("", &fakeRepo{}, &factoryCalls)
+
+			err := r.Run(context.Background(), []string{flag})
+			if err != nil {
+				t.Fatalf("err = %v, want nil", err)
+			}
+			if factoryCalls != 0 {
+				t.Fatalf("repo factory calls = %d, want 0", factoryCalls)
+			}
+			if !strings.Contains(stdout.String(), "Commands:") {
+				t.Fatalf("stdout = %q, want help", stdout.String())
+			}
+			if stderr.String() != "" {
+				t.Fatalf("stderr = %q, want empty", stderr.String())
+			}
+		})
 	}
 }
 
