@@ -9,6 +9,7 @@ import (
 	"google.golang.org/adk/agent/llmagent"
 	"google.golang.org/adk/model"
 	adktool "google.golang.org/adk/tool"
+	"google.golang.org/genai"
 )
 
 // ModelCallbacks returns before/after callbacks that emit llm.start and
@@ -17,20 +18,15 @@ import (
 func ModelCallbacks() ([]llmagent.BeforeModelCallback, []llmagent.AfterModelCallback) {
 	before := []llmagent.BeforeModelCallback{
 		func(ctx agent.CallbackContext, _ *model.LLMRequest) (*model.LLMResponse, error) {
-			slog.Debug("llm.start",
-				"invocation_id", ctx.InvocationID(),
-				"agent", ctx.AgentName(),
-			)
+			slog.Debug("llm.start", callbackContextAttrs(ctx)...)
 			return nil, nil
 		},
 	}
 	after := []llmagent.AfterModelCallback{
 		func(ctx agent.CallbackContext, resp *model.LLMResponse, respErr error) (*model.LLMResponse, error) {
-			attrs := []any{
-				"invocation_id", ctx.InvocationID(),
-				"agent", ctx.AgentName(),
+			attrs := append(callbackContextAttrs(ctx),
 				"error", respErr,
-			}
+			)
 			if resp != nil && resp.UsageMetadata != nil {
 				u := resp.UsageMetadata
 				attrs = append(attrs,
@@ -104,17 +100,18 @@ func ToolCallbacks() ([]llmagent.BeforeToolCallback, []llmagent.AfterToolCallbac
 	return before, after
 }
 
-type toolTraceContext interface {
+type callbackTraceContext interface {
 	InvocationID() string
 	SessionID() string
 	UserID() string
 	AppName() string
 	AgentName() string
 	Branch() string
+	UserContent() *genai.Content
 }
 
-func toolContextAttrs(ctx toolTraceContext) []any {
-	return []any{
+func callbackContextAttrs(ctx callbackTraceContext) []any {
+	attrs := []any{
 		"invocation_id", ctx.InvocationID(),
 		"session_id", ctx.SessionID(),
 		"user_id", ctx.UserID(),
@@ -122,4 +119,9 @@ func toolContextAttrs(ctx toolTraceContext) []any {
 		"agent", ctx.AgentName(),
 		"branch", ctx.Branch(),
 	}
+	return appendUserPromptAttr(attrs, ctx.UserContent())
+}
+
+func toolContextAttrs(ctx callbackTraceContext) []any {
+	return callbackContextAttrs(ctx)
 }

@@ -50,3 +50,22 @@ func TestEventPlugin_logsToolCallIDs(t *testing.T) {
 		}
 	}
 }
+
+func TestAppendUserPromptAttr(t *testing.T) {
+	attrs := attrMap(appendUserPromptAttr(nil, genai.NewContentFromText("Create a pasta recipe", genai.RoleUser)))
+	if got := attrs["user_prompt"]; got != "Create a pasta recipe" {
+		t.Fatalf("user_prompt = %v, want %q", got, "Create a pasta recipe")
+	}
+}
+
+func TestAppendUserPromptAttr_extractsUserMessageFromContextEnvelope(t *testing.T) {
+	content := genai.NewContentFromText(`{
+		"appContext": {"screen": "other", "path": "/traces/inv-1"},
+		"userMessage": "where am I right now?"
+	}`, genai.RoleUser)
+
+	attrs := attrMap(appendUserPromptAttr(nil, content))
+	if got := attrs["user_prompt"]; got != "where am I right now?" {
+		t.Fatalf("user_prompt = %v, want %q", got, "where am I right now?")
+	}
+}

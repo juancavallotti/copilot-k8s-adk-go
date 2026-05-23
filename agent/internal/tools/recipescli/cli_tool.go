@@ -3,6 +3,7 @@ package recipescli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/genai"
 )
 
 const (
@@ -118,6 +120,7 @@ type traceContext interface {
 	AgentName() string
 	Branch() string
 	FunctionCallID() string
+	UserContent() *genai.Content
 }
 
 func cliTraceAttrs(ctx context.Context) []any {
@@ -125,7 +128,7 @@ func cliTraceAttrs(ctx context.Context) []any {
 	if !ok {
 		return nil
 	}
-	return []any{
+	attrs := []any{
 		"invocation_id", tc.InvocationID(),
 		"session_id", tc.SessionID(),
 		"user_id", tc.UserID(),
@@ -135,6 +138,39 @@ func cliTraceAttrs(ctx context.Context) []any {
 		"function_call_id", tc.FunctionCallID(),
 		"tool", "call_recipes_cli",
 	}
+	if prompt := traceUserPromptText(tc.UserContent()); prompt != "" {
+		attrs = append(attrs, "user_prompt", prompt)
+	}
+	return attrs
+}
+
+func traceUserPromptText(c *genai.Content) string {
+	raw := strings.TrimSpace(traceContentText(c))
+	if raw == "" {
+		return ""
+	}
+	var wrapped struct {
+		UserMessage string `json:"userMessage"`
+	}
+	if err := json.Unmarshal([]byte(raw), &wrapped); err == nil {
+		if message := strings.TrimSpace(wrapped.UserMessage); message != "" {
+			return message
+		}
+	}
+	return raw
+}
+
+func traceContentText(c *genai.Content) string {
+	if c == nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, p := range c.Parts {
+		if p != nil && p.Text != "" {
+			b.WriteString(p.Text)
+		}
+	}
+	return b.String()
 }
 
 func validateCLIArgs(args []string) error {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Trace } from "./traces-api";
-import { groupTraces, itemToolName } from "./trace-grouping";
+import { findUserPrompt, groupTraces, itemToolName } from "./trace-grouping";
 
 function trace(
   id: string,
@@ -88,5 +88,34 @@ describe("groupTraces", () => {
     expect(item.kind === "toolGroup" ? itemToolName(item) : "").toBe(
       "call_recipes_cli",
     );
+  });
+});
+
+describe("findUserPrompt", () => {
+  it("returns the first non-empty prompt from trace data", () => {
+    expect(
+      findUserPrompt([
+        trace("t1", "agent.event", { user_prompt: "   " }),
+        trace("t2", "tool.start", { user_prompt: "Find pasta recipes" }),
+        trace("t3", "tool.end", { user_prompt: "Find dinner recipes" }),
+      ]),
+    ).toBe("Find pasta recipes");
+  });
+
+  it("extracts userMessage from prompt context JSON", () => {
+    expect(
+      findUserPrompt([
+        trace("t1", "agent.event", {
+          user_prompt: JSON.stringify({
+            appContext: { screen: "other", path: "/traces/inv-1" },
+            userMessage: "where am I right now?",
+          }),
+        }),
+      ]),
+    ).toBe("where am I right now?");
+  });
+
+  it("returns an empty string when no prompt is available", () => {
+    expect(findUserPrompt([trace("t1", "agent.event")])).toBe("");
   });
 });

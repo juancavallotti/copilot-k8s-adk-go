@@ -16,6 +16,18 @@ export function getFunctionCallId(data: unknown): string {
   return getStringField(data, "function_call_id");
 }
 
+export function getUserPrompt(data: unknown): string {
+  return normalizeUserPrompt(getStringField(data, "user_prompt"));
+}
+
+export function findUserPrompt(traces: Trace[]): string {
+  for (const trace of traces) {
+    const prompt = getUserPrompt(trace.data).trim();
+    if (prompt !== "") return prompt;
+  }
+  return "";
+}
+
 export function groupTraces(traces: Trace[]): TraceItem[] {
   const items: TraceItem[] = [];
   const groupsByCallId = new Map<string, Extract<TraceItem, { kind: "toolGroup" }>>();
@@ -95,4 +107,21 @@ function getStringField(data: unknown, field: string): string {
     if (typeof value === "string") return value;
   }
   return "";
+}
+
+function normalizeUserPrompt(prompt: string): string {
+  const raw = prompt.trim();
+  if (raw === "") return "";
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed != null && typeof parsed === "object" && "userMessage" in parsed) {
+      const message = (parsed as { userMessage?: unknown }).userMessage;
+      if (typeof message === "string" && message.trim() !== "") {
+        return message.trim();
+      }
+    }
+  } catch {
+    // Older and newer traces may store plain text here; keep it as-is.
+  }
+  return raw;
 }

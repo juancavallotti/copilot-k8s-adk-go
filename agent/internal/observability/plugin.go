@@ -1,6 +1,7 @@
 package observability
 
 import (
+	"encoding/json"
 	"log/slog"
 	"strings"
 
@@ -121,7 +122,31 @@ func eventCommonAttrs(ctx agent.InvocationContext, e *session.Event) []any {
 	if a := ctx.Agent(); a != nil {
 		attrs = append(attrs, "agent", a.Name())
 	}
+	attrs = appendUserPromptAttr(attrs, ctx.UserContent())
 	return attrs
+}
+
+func appendUserPromptAttr(attrs []any, content *genai.Content) []any {
+	if prompt := userPromptText(content); prompt != "" {
+		attrs = append(attrs, "user_prompt", prompt)
+	}
+	return attrs
+}
+
+func userPromptText(c *genai.Content) string {
+	raw := strings.TrimSpace(contentText(c))
+	if raw == "" {
+		return ""
+	}
+	var wrapped struct {
+		UserMessage string `json:"userMessage"`
+	}
+	if err := json.Unmarshal([]byte(raw), &wrapped); err == nil {
+		if message := strings.TrimSpace(wrapped.UserMessage); message != "" {
+			return message
+		}
+	}
+	return raw
 }
 
 func contentText(c *genai.Content) string {

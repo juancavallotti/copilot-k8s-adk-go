@@ -1,6 +1,10 @@
 package observability
 
-import "testing"
+import (
+	"testing"
+
+	"google.golang.org/genai"
+)
 
 type fakeToolTraceContext struct{}
 
@@ -10,6 +14,9 @@ func (fakeToolTraceContext) UserID() string       { return "user-1" }
 func (fakeToolTraceContext) AppName() string      { return "recipes" }
 func (fakeToolTraceContext) AgentName() string    { return "recipe_agent" }
 func (fakeToolTraceContext) Branch() string       { return "root" }
+func (fakeToolTraceContext) UserContent() *genai.Content {
+	return genai.NewContentFromText("Find dessert recipes", genai.RoleUser)
+}
 
 func TestToolContextAttrs(t *testing.T) {
 	attrs := attrMap(toolContextAttrs(fakeToolTraceContext{}))
@@ -20,6 +27,7 @@ func TestToolContextAttrs(t *testing.T) {
 		"app_name":      "recipes",
 		"agent":         "recipe_agent",
 		"branch":        "root",
+		"user_prompt":   "Find dessert recipes",
 	} {
 		if got := attrs[key]; got != want {
 			t.Fatalf("%s = %v, want %v", key, got, want)
