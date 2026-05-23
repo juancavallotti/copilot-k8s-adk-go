@@ -14,6 +14,8 @@ var (
 	ErrInvalidRecipe   = service.ErrInvalidRecipe
 	ErrInvalidRecipeID = service.ErrInvalidRecipeID
 
+	ErrEventNotFound = dbops.ErrEventNotFound
+
 	ErrSkillNotFound           = dbops.ErrSkillNotFound
 	ErrSkillNameTaken          = dbops.ErrSkillNameTaken
 	ErrInvalidSkillID          = service.ErrInvalidSkillID

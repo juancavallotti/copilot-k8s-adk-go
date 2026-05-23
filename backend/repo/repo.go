@@ -72,6 +72,14 @@ func (r *Repo) ListTracesByEvent(ctx context.Context, eventID string, limit, off
 	return r.service.ListTracesByEvent(ctx, eventID, limit, offset)
 }
 
+func (r *Repo) DeleteAllEvents(ctx context.Context) error {
+	return r.service.DeleteAllEvents(ctx)
+}
+
+func (r *Repo) DeleteEvent(ctx context.Context, eventID string) error {
+	return r.service.DeleteEvent(ctx, eventID)
+}
+
 func (r *Repo) ListSkills(ctx context.Context) ([]types.Skill, error) {
 	return r.service.ListSkills(ctx)
 }

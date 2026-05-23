@@ -37,6 +37,11 @@ type fakeStore struct {
 	listTracesLimit     int
 	listTracesOffset    int
 	listTracesResult    []types.Trace
+	deleteAllEventsCalls int
+	deleteAllEventsErr   error
+	deleteEventCalls     int
+	deleteEventID        string
+	deleteEventErr       error
 
 	createErr         error
 	getRecipeNotFound bool
@@ -114,6 +119,17 @@ func (f *fakeStore) ListTracesByEvent(ctx context.Context, eventID string, limit
 	f.listTracesLimit = limit
 	f.listTracesOffset = offset
 	return f.listTracesResult, nil
+}
+
+func (f *fakeStore) DeleteAllEvents(ctx context.Context) error {
+	f.deleteAllEventsCalls++
+	return f.deleteAllEventsErr
+}
+
+func (f *fakeStore) DeleteEventByID(ctx context.Context, eventID string) error {
+	f.deleteEventCalls++
+	f.deleteEventID = eventID
+	return f.deleteEventErr
 }
 
 func (f *fakeStore) ListSkills(ctx context.Context) ([]types.Skill, error) {

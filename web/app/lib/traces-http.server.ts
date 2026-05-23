@@ -64,3 +64,24 @@ export async function listEventTraces(
   }
   return res.json() as Promise<Trace[]>;
 }
+
+export async function deleteAllEvents(request: Request): Promise<void> {
+  const base = getApiBase(request);
+  const res = await fetch(`${base}/events`, { method: "DELETE" });
+  if (!res.ok) {
+    throw await readJsonError(res);
+  }
+}
+
+export async function deleteEvent(
+  request: Request,
+  eventId: string,
+): Promise<void> {
+  const base = getApiBase(request);
+  const res = await fetch(`${base}/events/${encodeURIComponent(eventId)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    throw await readJsonError(res);
+  }
+}

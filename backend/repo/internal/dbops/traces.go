@@ -3,6 +3,7 @@ package dbops
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	types "juancavallotti.com/recipe-types"
@@ -72,6 +73,46 @@ LIMIT $1 OFFSET $2`, limit, offset)
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// DeleteAllEvents removes every row in the events table; the FK cascade on
+// traces.event_id wipes the traces table as a side effect.
+func (s *Store) DeleteAllEvents(ctx context.Context) error {
+	if s.db == nil {
+		return errNilDB
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM events`)
+	return err
+}
+
+// DeleteEventByID removes one event and (via FK cascade) its traces. Returns
+// ErrEventNotFound when no row matches.
+func (s *Store) DeleteEventByID(ctx context.Context, eventID string) error {
+	if s.db == nil {
+		return errNilDB
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	eventID = strings.TrimSpace(eventID)
+	if eventID == "" {
+		return ErrEventNotFound
+	}
+	res, err := s.db.ExecContext(ctx, `DELETE FROM events WHERE event_id = $1`, eventID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrEventNotFound
+	}
+	return nil
 }
 
 // ListTracesByEvent returns traces for an event in chronological order.

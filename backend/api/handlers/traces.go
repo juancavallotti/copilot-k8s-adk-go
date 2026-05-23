@@ -31,3 +31,21 @@ func (h *Handlers) ListEventTraces(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, traces)
 }
+
+// DeleteAllEvents handles DELETE /events.
+func (h *Handlers) DeleteAllEvents(c *gin.Context) {
+	if err := h.Repo.DeleteAllEvents(c.Request.Context()); err != nil {
+		writeRepoErr(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// DeleteEvent handles DELETE /events/:event_id.
+func (h *Handlers) DeleteEvent(c *gin.Context) {
+	if err := h.Repo.DeleteEvent(c.Request.Context(), c.Param("event_id")); err != nil {
+		writeRepoErr(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}

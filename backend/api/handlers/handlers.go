@@ -24,6 +24,8 @@ func (h *Handlers) Register(r gin.IRouter) {
 	{
 		recipes.GET("", h.ListRecipes)
 		recipes.POST("", h.CreateRecipe)
+		recipes.GET("/export", h.ExportRecipesZip)
+		recipes.POST("/import", h.ImportRecipesZip)
 		recipes.GET("/:id", h.GetRecipe)
 		recipes.PUT("/:id", h.ReplaceRecipe)
 		recipes.PATCH("/:id", h.PatchRecipe)
@@ -36,7 +38,9 @@ func (h *Handlers) Register(r gin.IRouter) {
 	events := r.Group("/events")
 	{
 		events.GET("", h.ListEvents)
+		events.DELETE("", h.DeleteAllEvents)
 		events.GET("/:event_id/traces", h.ListEventTraces)
+		events.DELETE("/:event_id", h.DeleteEvent)
 	}
 
 	skills := r.Group("/skills")

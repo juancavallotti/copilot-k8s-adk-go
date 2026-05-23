@@ -21,7 +21,7 @@ function event(overrides: Partial<Event> = {}): Event {
 describe("tracesListReducer", () => {
   it("FETCH_STARTED clears events and error", () => {
     const next = tracesListReducer(
-      { events: [event()], listError: "boom" },
+      { ...tracesListInitialState, events: [event()], listError: "boom" },
       { type: TracesListActionType.FETCH_STARTED },
     );
     expect(next.events).toBeNull();

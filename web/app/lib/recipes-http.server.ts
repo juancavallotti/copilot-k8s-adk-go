@@ -124,3 +124,34 @@ export async function patchRecipe(
   }
   return res.json() as Promise<Recipe>;
 }
+
+export type RestoreResult = {
+  imported: number;
+  failed: Array<{ id: string; error: string }>;
+};
+
+export async function downloadBackup(request: Request): Promise<Response> {
+  const base = getApiBase(request);
+  const res = await fetch(`${base}/recipes/export`);
+  if (!res.ok) {
+    throw await readJsonError(res);
+  }
+  return res;
+}
+
+export async function uploadBackup(
+  request: Request,
+  file: File,
+): Promise<RestoreResult> {
+  const base = getApiBase(request);
+  const fd = new FormData();
+  fd.set("file", file);
+  const res = await fetch(`${base}/recipes/import`, {
+    method: "POST",
+    body: fd,
+  });
+  if (!res.ok) {
+    throw await readJsonError(res);
+  }
+  return (await res.json()) as RestoreResult;
+}

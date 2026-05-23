@@ -25,6 +25,8 @@ type recipeStore interface {
 	InsertTrace(ctx context.Context, eventID string, occurredAt time.Time, data json.RawMessage) error
 	ListEvents(ctx context.Context, limit, offset int) ([]types.Event, error)
 	ListTracesByEvent(ctx context.Context, eventID string, limit, offset int) ([]types.Trace, error)
+	DeleteAllEvents(ctx context.Context) error
+	DeleteEventByID(ctx context.Context, eventID string) error
 
 	ListSkills(ctx context.Context) ([]types.Skill, error)
 	GetSkill(ctx context.Context, id string) (types.Skill, error)
