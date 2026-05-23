@@ -352,14 +352,20 @@ function describeToolCall(call: ToolCall): string {
   return call.name;
 }
 
-function ToolCallChip({ call }: { call: ToolCall }) {
+function ToolCallChip({
+  call,
+  onClick,
+}: {
+  call: ToolCall;
+  onClick: (call: ToolCall) => void;
+}) {
   const label = describeToolCall(call);
   const styles =
     call.status === "error"
-      ? "bg-red-50 text-red-800 dark:bg-red-950/60 dark:text-red-200"
+      ? "bg-red-50 text-red-800 hover:bg-red-100 dark:bg-red-950/60 dark:text-red-200 dark:hover:bg-red-900/60"
       : call.status === "pending"
-        ? "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
-        : "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200";
+        ? "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+        : "bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:text-emerald-200 dark:hover:bg-emerald-900/60";
   const icon =
     call.status === "error" ? (
       <AlertCircle className="size-3" aria-hidden />
@@ -369,14 +375,133 @@ function ToolCallChip({ call }: { call: ToolCall }) {
       <CheckCircle2 className="size-3" aria-hidden />
     );
   return (
-    <span
+    <button
+      type="button"
       title={`${call.name}${call.summary ? ` — ${call.summary}` : ""}`}
-      className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[0.6875rem] font-medium ${styles}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick(call);
+      }}
+      className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[0.6875rem] font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${styles}`}
     >
       <Wrench className="size-3 shrink-0 opacity-60" aria-hidden />
       {icon}
       <span className="truncate font-mono">{label}</span>
-    </span>
+    </button>
+  );
+}
+
+function formatJSON(value: unknown): string {
+  if (value === undefined) return "";
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function ToolCallDialog({
+  call,
+  onClose,
+}: {
+  call: ToolCall;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  const argsBody = formatJSON(call.args);
+  const responseBody = formatJSON(call.response);
+  const statusLabel =
+    call.status === "pending"
+      ? "Running"
+      : call.status === "error"
+        ? "Failed"
+        : "Succeeded";
+  const statusStyles =
+    call.status === "error"
+      ? "bg-red-100 text-red-800 dark:bg-red-950/70 dark:text-red-200"
+      : call.status === "pending"
+        ? "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+        : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-200";
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Tool call: ${call.name}`}
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-950/85 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 text-zinc-100 shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="flex items-start justify-between gap-3 border-b border-zinc-800 px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <Wrench className="size-4 text-zinc-400" aria-hidden />
+              <h3 className="truncate font-mono text-sm font-semibold">
+                {call.name}
+              </h3>
+              <span
+                className={`shrink-0 rounded-full px-2 py-0.5 text-[0.6875rem] font-medium ${statusStyles}`}
+              >
+                {statusLabel}
+              </span>
+            </div>
+            {call.summary ? (
+              <p className="mt-1 break-all font-mono text-xs text-zinc-400">
+                {call.summary}
+              </p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            className="rounded-full p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500"
+            onClick={onClose}
+            aria-label="Close tool call dialog"
+          >
+            <X className="size-4" aria-hidden />
+          </button>
+        </header>
+        <div className="flex-1 space-y-4 overflow-auto px-4 py-3">
+          <section>
+            <h4 className="mb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wide text-zinc-500">
+              Arguments
+            </h4>
+            <pre className="whitespace-pre-wrap break-words rounded-lg bg-zinc-900 px-3 py-2 font-mono text-xs leading-relaxed text-zinc-300">
+              {argsBody === "" ? (
+                <span className="text-zinc-500">(no arguments)</span>
+              ) : (
+                <HighlightedJSON source={argsBody} />
+              )}
+            </pre>
+          </section>
+          <section>
+            <h4 className="mb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wide text-zinc-500">
+              Response
+            </h4>
+            <pre className="whitespace-pre-wrap break-words rounded-lg bg-zinc-900 px-3 py-2 font-mono text-xs leading-relaxed text-zinc-300">
+              {responseBody === "" ? (
+                <span className="text-zinc-500">
+                  {call.status === "pending"
+                    ? "(awaiting response)"
+                    : "(no response data)"}
+                </span>
+              ) : (
+                <HighlightedJSON source={responseBody} />
+              )}
+            </pre>
+          </section>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -546,6 +671,19 @@ export function AgentChat() {
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [debugMessage, setDebugMessage] = useState<ChatMessage | null>(null);
+  const [selectedToolCallID, setSelectedToolCallID] = useState<string | null>(
+    null,
+  );
+  const liveSelectedToolCall = useMemo<ToolCall | null>(() => {
+    if (selectedToolCallID == null) return null;
+    for (const message of messages) {
+      const found = message.toolCalls?.find(
+        (call) => call.id === selectedToolCallID,
+      );
+      if (found != null) return found;
+    }
+    return null;
+  }, [selectedToolCallID, messages]);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const baseURL = useMemo(getAgentBaseURL, []);
@@ -850,7 +988,11 @@ export function AgentChat() {
                           ].join(" ")}
                         >
                           {message.toolCalls.map((call) => (
-                            <ToolCallChip key={call.id} call={call} />
+                            <ToolCallChip
+                              key={call.id}
+                              call={call}
+                              onClick={(c) => setSelectedToolCallID(c.id)}
+                            />
                           ))}
                         </div>
                       ) : null}
@@ -979,6 +1121,12 @@ export function AgentChat() {
         <DebugDialog
           message={debugMessage}
           onClose={() => setDebugMessage(null)}
+        />
+      ) : null}
+      {liveSelectedToolCall != null ? (
+        <ToolCallDialog
+          call={liveSelectedToolCall}
+          onClose={() => setSelectedToolCallID(null)}
         />
       ) : null}
     </div>
