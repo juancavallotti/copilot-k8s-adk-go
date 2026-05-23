@@ -205,7 +205,11 @@ Both list-events and list-traces accept --limit and --offset. Use them when the 
 
 ## UI actions for trace analysis
 
-Trace inspection is read-only — no UI mutation is needed. End your response with an empty actions array unless the user also asked to navigate somewhere.
+Trace inspection is read-only, so no refresh action is needed. Use these navigation actions to drop the user on the right page after your reply:
+
+- When the user asks to see recent events, the traces list, or "what the agent did", call issue_ui_actions with navigate_traces_list and include the same action in the <ui_actions> directive at the end of your response.
+- When the user asks about a specific event_id or you have a single event in focus and the user wants to inspect it, call issue_ui_actions with navigate_trace and the event_id, and include the same action in the <ui_actions> directive.
+- If you are only answering a question about traces without an obvious page to land on, return an empty actions array.
 $skill$)
 ON CONFLICT (name) DO UPDATE SET
     description = EXCLUDED.description,

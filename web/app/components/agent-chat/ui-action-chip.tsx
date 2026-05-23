@@ -6,6 +6,10 @@ export function describeUIAction(action: UIAction): string {
       return "Open recipe";
     case "navigate_recipe_list":
       return "Open recipe list";
+    case "navigate_trace":
+      return "Open trace";
+    case "navigate_traces_list":
+      return "Open traces list";
     case "refresh_current_screen":
       return "Refresh current screen";
   }

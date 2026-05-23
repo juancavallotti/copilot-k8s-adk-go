@@ -12,8 +12,9 @@ import (
 const ToolName = "issue_ui_actions"
 
 type Action struct {
-	Type     string `json:"type" jsonschema:"UI action type. Allowed values: navigate_recipe, navigate_recipe_list, refresh_current_screen."`
+	Type     string `json:"type" jsonschema:"UI action type. Allowed values: navigate_recipe, navigate_recipe_list, navigate_trace, navigate_traces_list, refresh_current_screen."`
 	RecipeID string `json:"recipeId,omitempty" jsonschema:"Required when type is navigate_recipe. Use the internal recipe ID returned by recipes-cli."`
+	EventID  string `json:"eventId,omitempty" jsonschema:"Required when type is navigate_trace. The event_id returned by recipes-cli list-events."`
 }
 
 type Args struct {
@@ -46,15 +47,24 @@ func Normalize(input Args) (Result, error) {
 		normalized := Action{
 			Type:     strings.TrimSpace(action.Type),
 			RecipeID: strings.TrimSpace(action.RecipeID),
+			EventID:  strings.TrimSpace(action.EventID),
 		}
 		switch normalized.Type {
 		case "navigate_recipe":
 			if normalized.RecipeID == "" {
 				return Result{Actions: actions}, fmt.Errorf("navigate_recipe requires recipeId")
 			}
+			normalized.EventID = ""
 			actions = append(actions, normalized)
-		case "navigate_recipe_list", "refresh_current_screen":
+		case "navigate_trace":
+			if normalized.EventID == "" {
+				return Result{Actions: actions}, fmt.Errorf("navigate_trace requires eventId")
+			}
 			normalized.RecipeID = ""
+			actions = append(actions, normalized)
+		case "navigate_recipe_list", "navigate_traces_list", "refresh_current_screen":
+			normalized.RecipeID = ""
+			normalized.EventID = ""
 			actions = append(actions, normalized)
 		default:
 			return Result{Actions: actions}, fmt.Errorf("unsupported UI action type %q", normalized.Type)

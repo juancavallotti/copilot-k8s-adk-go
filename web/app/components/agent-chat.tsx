@@ -145,6 +145,10 @@ export function AgentChat() {
         void navigate(`/recipe/${encodeURIComponent(action.recipeId)}`);
       } else if (action.type === "navigate_recipe_list") {
         void navigate("/");
+      } else if (action.type === "navigate_trace") {
+        void navigate(`/traces/${encodeURIComponent(action.eventId)}`);
+      } else if (action.type === "navigate_traces_list") {
+        void navigate("/traces");
       } else if (action.type === "refresh_current_screen") {
         void revalidator.revalidate();
       }

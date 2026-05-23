@@ -1,6 +1,8 @@
 export type UIAction =
   | { type: "navigate_recipe"; recipeId: string }
   | { type: "navigate_recipe_list" }
+  | { type: "navigate_trace"; eventId: string }
+  | { type: "navigate_traces_list" }
   | { type: "refresh_current_screen" };
 
 export type ToolCallStatus = "pending" | "success" | "error";
@@ -72,6 +74,15 @@ export function normalizeUIActions(value: unknown): UIAction[] {
     }
     if (action.type === "navigate_recipe_list") {
       return [{ type: "navigate_recipe_list" }];
+    }
+    if (action.type === "navigate_trace") {
+      const eventId = action.eventId ?? action.event_id;
+      return typeof eventId === "string" && eventId.trim() !== ""
+        ? [{ type: "navigate_trace", eventId: eventId.trim() }]
+        : [];
+    }
+    if (action.type === "navigate_traces_list") {
+      return [{ type: "navigate_traces_list" }];
     }
     if (action.type === "refresh_current_screen") {
       return [{ type: "refresh_current_screen" }];
@@ -174,10 +185,14 @@ function inferStatus(response: unknown): ToolCallStatus {
 export function uniqueUIActions(actions: UIAction[]): UIAction[] {
   const seen = new Set<string>();
   return actions.filter((action) => {
-    const key =
-      action.type === "navigate_recipe"
-        ? `${action.type}:${action.recipeId}`
-        : action.type;
+    let key: string;
+    if (action.type === "navigate_recipe") {
+      key = `${action.type}:${action.recipeId}`;
+    } else if (action.type === "navigate_trace") {
+      key = `${action.type}:${action.eventId}`;
+    } else {
+      key = action.type;
+    }
     if (seen.has(key)) return false;
     seen.add(key);
     return true;

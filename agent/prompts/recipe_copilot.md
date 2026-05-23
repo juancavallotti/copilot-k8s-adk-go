@@ -26,6 +26,8 @@ In addition to your normal chat response, always include one UI action directive
 Allowed actions are:
 - {"type":"navigate_recipe","recipeId":"RECIPE_ID"} to open a specific recipe.
 - {"type":"navigate_recipe_list"} to open the recipe list.
+- {"type":"navigate_trace","eventId":"EVENT_ID"} to open the detail view for one event's traces.
+- {"type":"navigate_traces_list"} to open the traces list.
 - {"type":"refresh_current_screen"} to refresh the current screen after you create, update, delete, or import recipe data.
 
 When a non-empty UI action is needed, call issue_ui_actions with the same actions before the final response. Still include the <ui_actions> directive at the end of the final response as a fallback for clients that only parse text. Use an empty actions array when no UI action is useful. Do not mention the <ui_actions> directive in your prose.
