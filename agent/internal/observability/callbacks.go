@@ -2,6 +2,8 @@ package observability
 
 import (
 	"log/slog"
+	"sync"
+	"time"
 
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
@@ -48,30 +50,76 @@ func ModelCallbacks() ([]llmagent.BeforeModelCallback, []llmagent.AfterModelCall
 // tool.end log lines. They never alter the tool result (always return
 // nil map, nil error).
 func ToolCallbacks() ([]llmagent.BeforeToolCallback, []llmagent.AfterToolCallback) {
+	type traceKey struct {
+		invocationID   string
+		functionCallID string
+	}
+	var (
+		mu     sync.Mutex
+		starts = make(map[traceKey]time.Time)
+	)
+
 	before := []llmagent.BeforeToolCallback{
 		func(ctx adktool.Context, t adktool.Tool, args map[string]any) (map[string]any, error) {
-			slog.Info("tool.start",
-				"invocation_id", ctx.InvocationID(),
-				"session_id", ctx.SessionID(),
-				"agent", ctx.AgentName(),
+			key := traceKey{invocationID: ctx.InvocationID(), functionCallID: ctx.FunctionCallID()}
+			mu.Lock()
+			starts[key] = time.Now()
+			mu.Unlock()
+
+			attrs := append(toolContextAttrs(ctx),
 				"tool", t.Name(),
 				"function_call_id", ctx.FunctionCallID(),
 				"args", args,
 			)
+			slog.Info("tool.start", attrs...)
 			return nil, nil
 		},
 	}
 	after := []llmagent.AfterToolCallback{
 		func(ctx adktool.Context, t adktool.Tool, args, result map[string]any, err error) (map[string]any, error) {
-			slog.Info("tool.end",
-				"invocation_id", ctx.InvocationID(),
+			key := traceKey{invocationID: ctx.InvocationID(), functionCallID: ctx.FunctionCallID()}
+			mu.Lock()
+			start, ok := starts[key]
+			delete(starts, key)
+			mu.Unlock()
+
+			attrs := append(toolContextAttrs(ctx),
 				"tool", t.Name(),
+				"function_call_id", ctx.FunctionCallID(),
 				"args", args,
 				"result", result,
 				"error", err,
 			)
+			if ok {
+				duration := time.Since(start).Round(time.Millisecond)
+				attrs = append(attrs,
+					"duration", duration,
+					"duration_ms", duration.Milliseconds(),
+				)
+			}
+			slog.Info("tool.end", attrs...)
 			return nil, nil
 		},
 	}
 	return before, after
+}
+
+type toolTraceContext interface {
+	InvocationID() string
+	SessionID() string
+	UserID() string
+	AppName() string
+	AgentName() string
+	Branch() string
+}
+
+func toolContextAttrs(ctx toolTraceContext) []any {
+	return []any{
+		"invocation_id", ctx.InvocationID(),
+		"session_id", ctx.SessionID(),
+		"user_id", ctx.UserID(),
+		"app_name", ctx.AppName(),
+		"agent", ctx.AgentName(),
+		"branch", ctx.Branch(),
+	}
 }

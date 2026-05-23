@@ -33,6 +33,23 @@ func TestInit_filterAllowsAgentEvent(t *testing.T) {
 	}
 }
 
+func TestInit_filterAllowsStateDelta(t *testing.T) {
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	var sink bytes.Buffer
+	Init("info", &sink)
+	slog.Info("state.delta", "invocation_id", "inv-1", "delta", map[string]any{"x": 1})
+
+	got := sink.String()
+	if !strings.Contains(got, `"msg":"state.delta"`) {
+		t.Fatalf("sink missing state.delta: %q", got)
+	}
+	if !strings.Contains(got, `"invocation_id":"inv-1"`) {
+		t.Fatalf("sink missing invocation_id: %q", got)
+	}
+}
+
 func TestInit_filterAllowsLLMAndToolPrefixes(t *testing.T) {
 	prev := slog.Default()
 	t.Cleanup(func() { slog.SetDefault(prev) })
@@ -60,7 +77,6 @@ func TestInit_filterBlocksNonAgentRecords(t *testing.T) {
 	var sink bytes.Buffer
 	Init("info", &sink)
 	slog.Info("agent.starting", "addr", "x")
-	slog.Info("state.delta", "invocation_id", "inv-1")
 	slog.Info("random.app.event")
 
 	if sink.Len() != 0 {
@@ -94,8 +110,8 @@ func TestIsAgentTraceRecord(t *testing.T) {
 		{"tool.end", true},
 		{"tool.request", true},
 		{"tool.response", true},
+		{"state.delta", true},
 		{"agent.starting", false},
-		{"state.delta", false},
 		{"", false},
 		{"agent.event.extra", false}, // exact match only for agent.event
 		{"toolbar.click", false},     // prefix is "tool." not "tool"
