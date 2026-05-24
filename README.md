@@ -17,6 +17,43 @@
 - [DevSpace](https://www.devspace.sh/) handles the in-cluster dev loop with file sync and port forwarding.
 - [release-please](https://github.com/googleapis/release-please) automates versioning and changelogs from Conventional Commits.
 
+## Monorepo Layout
+
+```
+.
+├── backend/        Go workspace: API, CLI, repository, shared types
+│   ├── api/          HTTP API server (recipes-api) with handlers + structured logging
+│   ├── cli/          recipes-cli — the agent's tool surface for reading/writing recipes
+│   ├── repo/         Postgres-backed repository, error types, and tests
+│   └── types/        Shared domain types imported by api, cli, and agent
+├── agent/          Go service built on Google ADK
+│   ├── cmd/recipes-agent/   Entry point binary
+│   ├── internal/
+│   │   ├── app/             Wiring + lifecycle
+│   │   ├── config/          Env loading and validation
+│   │   ├── copilot/         Conversational copilot loop
+│   │   ├── imagegen/        Image generation pipeline (Gemini / OpenAI)
+│   │   ├── instruction/     System prompt loader
+│   │   ├── modelrouter/     Per-provider model selection (Gemini / OpenAI / Anthropic)
+│   │   ├── observability/   slog setup and tracing hooks
+│   │   ├── server/          HTTP transport
+│   │   ├── skills/          ADK skills exposed to the model
+│   │   └── tools/           ADK tool wrappers around recipes-cli
+│   └── prompts/             Markdown system prompts
+├── web/            React Router 7 + Tailwind 4 frontend
+│   └── app/
+│       ├── components/    UI components
+│       ├── routes/        Route modules
+│       ├── state/         Reducer-based state slices
+│       └── lib/           Client helpers
+├── database/       Postgres image: schema (db.sql) + entrypoint
+├── helm/           Helm chart for postgres, backend, agent, and web
+├── scripts/        Operational scripts (e.g. ttlsh-publish.sh)
+└── Taskfile.yml    Root Task entrypoint that includes each module's tasks
+```
+
+Each Go module (`backend/api`, `backend/cli`, `backend/repo`, `backend/types`, `agent`) has its own `go.mod` and is tied together through `backend/go.work`. The `web/` package is a standalone npm workspace. Every module ships its own `Taskfile.yml` that the root taskfile includes and flattens, so root-level tasks like `task build:images` or `task test` fan out into the right place.
+
 ## Getting Started
 
 ### Prerequisites
