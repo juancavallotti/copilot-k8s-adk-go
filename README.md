@@ -137,11 +137,40 @@ The agent runs on its own container. It's built on top of Google ADK's `LLMAgent
 
 <img width="2858" height="1257" alt="image" src="https://github.com/user-attachments/assets/607b5507-725d-4bdb-92bc-bb084098dec9" />
 
+The `LLMAgent` in [agent/internal/copilot/copilot.go](agent/internal/copilot/copilot.go) is composed of three tools, a system prompt assembled from [agent/prompts/](agent/prompts/) plus the skill catalog, and a stack of before/after callbacks:
+
+- **`recipes_cli`** — shells out to the in-container `recipes-cli` binary to read, create, update, and delete recipes. This is the agent's only path to the database; it never speaks SQL directly.
+- **`generate_recipe_photo`** — calls the configured image generator (Gemini or OpenAI), writes the output to `AGENT_IMAGE_OUTPUT_DIR`, and returns a handle the CLI then attaches to the recipe. Concurrency is capped by `AGENT_IMAGE_GENERATION_CONCURRENCY`.
+- **`issue_ui_actions`** — a structured tool the model calls to ask the browser to do something (navigate to a recipe, refresh the list, open a trace, etc.). The tool simply normalizes and echoes the actions back; the browser is the executor.
+
+A `BeforeModelCallback` ([agent/internal/copilot/context_window.go](agent/internal/copilot/context_window.go)) trims long sessions before they hit the model, and the `observability` callbacks (`ModelCallbacks`, `ToolCallbacks` in [agent/internal/observability/](agent/internal/observability/)) emit structured slog events plus per-turn trace events the UI can replay.
+
+##### Client ↔ Agent context flow for UI actions
+
+The interesting bit is how the browser and the agent stay in sync without the agent ever touching the DOM:
+
+1. The web client opens an SSE stream to the agent's `/run_sse` and sends the user message plus a top-level `modelContext: { agentModel, imageModel }` block.
+2. The routing middleware ([agent/internal/server/routing.go](agent/internal/server/routing.go)) extracts and **strips** `modelContext` before forwarding the body to ADK (ADK rejects unknown fields), then picks the right cached agent instance for that combo.
+3. The LLM, guided by the system prompt, calls `issue_ui_actions` whenever a turn should produce side effects in the UI — e.g. after a successful recipe create, the agent calls it with `{ type: "navigate_recipe", recipeId: "..." }`.
+4. The action result streams back as a normal ADK tool event. The browser ([web/app/lib/agent-ui-actions.ts](web/app/lib/agent-ui-actions.ts)) parses actions from **both** the tool response and a fallback `<ui_actions>` block in assistant text (the latter is there for models that prefer prose to function calls).
+5. The chat hook ([web/app/components/agent-chat/use-agent-chat.ts](web/app/components/agent-chat/use-agent-chat.ts)) dispatches the actions through React Router — navigating, refreshing loaders, or opening trace views — and renders a chip per executed action so the user can see what the agent did.
+
+Because the action set is a closed enum (`navigate_recipe`, `navigate_recipe_list`, `navigate_trace`, `navigate_traces_list`, `refresh_current_screen`), the agent can't drive the UI into an undefined state, and the browser can ignore any action it doesn't understand.
+
 #### Model Routing
 
 To support multiple models, the architecture instantiates agents wired with the right model combinations on demand, and plugs in the shared short-term memory, tools, and skills.
 
 <img width="2190" height="976" alt="image" src="https://github.com/user-attachments/assets/4aafae74-cd4f-4eab-9101-520db5e7c47c" />
+
+The router is two pieces working together:
+
+- **`Registry`** ([agent/internal/modelrouter/registry.go](agent/internal/modelrouter/registry.go)) is built once at boot. It inspects the config and registers an `AgentBuilder` and/or `ImageBuilder` per provider — Google is mandatory; OpenAI and Anthropic light up automatically when their API keys are set. Each registered model gets a stable ID of the form `provider:model` (e.g. `google:gemini-3.1-flash-lite`, `anthropic:claude-haiku-4-5`) and an `AgentOption` / `ImageOption` the web app fetches at startup to populate the model picker.
+- **`Router`** ([agent/internal/modelrouter/router.go](agent/internal/modelrouter/router.go)) takes a `Selection{AgentID, ImageID}` per request, resolves empty fields to registry defaults, and returns a cached `*adkrest.Server` for that combo. The cache uses `sync.Map` + `sync.Once`, so the heavy work (building the LLM client, the image generator, the `LLMAgent`, and the ADK server) happens at most once per combo.
+
+Critically, every cached `adkrest.Server` is constructed with the **same** `SessionService`, `MemoryService`, and `ArtifactService` instances. That means a user can switch from Gemini to Claude mid-conversation and the new agent picks up the existing session, short-term memory, and any generated artifacts (e.g. recipe photos) without losing context. The only thing that changes is which LLM (and which image model) the next turn runs against.
+
+The wire format is intentionally minimal: the client sends `modelContext` on the request body, the routing middleware strips it before ADK sees it, and the rest of the request is a stock ADK `/run` or `/run_sse` payload. No custom headers, no per-model routes, no client-side awareness of providers beyond the IDs the registry advertises.
 
 ### Kubernetes Topology
 
