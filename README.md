@@ -130,7 +130,18 @@ Environment knobs: `TTL` (e.g. `30m`, `1h`, `4h`, `24h` — default `4h`), `TAG`
 
 ## Architecture
 
-_To be written._
+### Copilot Agent
+#### Agent Architecture
+
+The agent runs on its own container. It's built on top of Google ADK's `LLMAgent` abstraction.
+
+<img width="2858" height="1257" alt="image" src="https://github.com/user-attachments/assets/607b5507-725d-4bdb-92bc-bb084098dec9" />
+
+#### Model Routing
+
+To support multiple models, the architecture instantiates agents wired with the right model combinations on demand, and plugs in the shared short-term memory, tools, and skills.
+
+<img width="2190" height="976" alt="image" src="https://github.com/user-attachments/assets/4aafae74-cd4f-4eab-9101-520db5e7c47c" />
 
 ### Kubernetes Topology
 
