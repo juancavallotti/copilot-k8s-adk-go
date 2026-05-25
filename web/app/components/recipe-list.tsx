@@ -1,9 +1,8 @@
-import { ChefHat, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useEffect, useId, useMemo } from "react";
-import { Link, useFetcher } from "react-router";
+import { useFetcher } from "react-router";
 
 import type { Recipe } from "~/lib/recipe-api";
-import { getRecipeDisplayPhotos } from "~/lib/recipe-photos";
 import {
   RecipeListProvider,
   useRecipeListState,
@@ -13,8 +12,7 @@ import {
   type RecipeListDeleteResult,
   type RecipeSort,
 } from "~/state/recipe-list/types";
-import { MarkdownView } from "./markdown-view";
-import { RecipePhotoViewer } from "./recipe-photo-viewer";
+import { RecipeRow } from "./recipe-row";
 
 export type RecipeListProps = {
   recipes: Recipe[];
@@ -250,128 +248,79 @@ function RecipeListContent({
         {visibleRecipes.map((recipe) => {
           const isConfirming = confirmingId === recipe.id;
           const isDeleting = deletingId === recipe.id;
-          const displayPhotos = getRecipeDisplayPhotos(recipe);
-          const primaryPhoto = displayPhotos[0] ?? null;
 
           return (
-            <li
+            <RecipeRow
               key={recipe.id}
-              className="flex gap-2 rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
-            >
-              <div className="shrink-0 p-4 pr-0">
-                <div className="size-20 overflow-hidden rounded-lg bg-zinc-100 dark:bg-zinc-800">
-                  {primaryPhoto != null ? (
-                    <RecipePhotoViewer
-                      photos={displayPhotos}
-                      ariaLabel={`Open photos for ${recipe.name}`}
-                      className="block size-full overflow-hidden rounded-lg outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-zinc-400 dark:focus-visible:ring-zinc-500"
+              recipe={recipe}
+              footer={<>Added {formatDate(recipe.created_at)}</>}
+              trailing={
+                <div className="flex shrink-0 flex-col border-l border-zinc-100 dark:border-zinc-800">
+                  {isConfirming ? (
+                    <fetcher.Form
+                      method="post"
+                      className="flex flex-1 flex-col justify-center gap-2 px-3 py-3"
+                      onSubmit={() => {
+                        dispatch({
+                          type: RecipeListActionType.SUBMIT_DELETE,
+                          data: recipe.id,
+                        });
+                        onDeleteStart(recipe.id);
+                      }}
                     >
-                      <img
-                        src={primaryPhoto.src}
-                        alt=""
-                        className="size-full object-cover"
-                      />
-                    </RecipePhotoViewer>
+                      <input type="hidden" name="intent" value="delete" />
+                      <input type="hidden" name="id" value={recipe.id} />
+                      <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                        Delete?
+                      </span>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          className="rounded-md px-2 py-1 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                          onClick={() =>
+                            dispatch({
+                              type: RecipeListActionType.SET_CONFIRMING_ID,
+                              data: null,
+                            })
+                          }
+                          disabled={deletingId !== null}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:pointer-events-none disabled:opacity-40 dark:bg-red-700 dark:hover:bg-red-600"
+                          disabled={deletingId !== null}
+                        >
+                          Confirm
+                        </button>
+                      </div>
+                    </fetcher.Form>
                   ) : (
-                    <div className="flex size-full items-center justify-center text-zinc-400 dark:text-zinc-500">
-                      <ChefHat className="size-8 stroke-[1.5]" aria-hidden />
-                    </div>
+                    <button
+                      type="button"
+                      className="flex flex-1 items-center justify-center px-3 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-700 disabled:pointer-events-none disabled:opacity-40 dark:hover:bg-red-950/40 dark:hover:text-red-300"
+                      aria-label={`Delete ${recipe.name}`}
+                      disabled={deletingId !== null}
+                      onClick={() =>
+                        dispatch({
+                          type: RecipeListActionType.SET_CONFIRMING_ID,
+                          data: recipe.id,
+                        })
+                      }
+                    >
+                      {isDeleting ? (
+                        <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                          ...
+                        </span>
+                      ) : (
+                        <Trash2 className="size-4 stroke-[2]" aria-hidden />
+                      )}
+                    </button>
                   )}
                 </div>
-              </div>
-              <Link
-                to={`/recipe/${recipe.id}`}
-                className="flex min-w-0 flex-1 p-4 pl-0 outline-none transition-colors hover:bg-zinc-50/80 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400 dark:hover:bg-zinc-800/50 dark:focus-visible:ring-zinc-500"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-baseline gap-2">
-                    <h3 className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                      {recipe.name}
-                    </h3>
-                    {recipe.category.trim() !== "" ? (
-                      <span className="shrink-0 rounded-md bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                        {recipe.category}
-                      </span>
-                    ) : null}
-                  </div>
-                  {recipe.description.trim() !== "" ? (
-                    <MarkdownView
-                      variant="preview"
-                      className="mt-1 line-clamp-2 text-sm text-zinc-600 dark:text-zinc-400"
-                    >
-                      {recipe.description}
-                    </MarkdownView>
-                  ) : null}
-                  <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-500">
-                    Added {formatDate(recipe.created_at)}
-                  </p>
-                </div>
-              </Link>
-              <div className="flex shrink-0 flex-col border-l border-zinc-100 dark:border-zinc-800">
-                {isConfirming ? (
-                  <fetcher.Form
-                    method="post"
-                    className="flex flex-1 flex-col justify-center gap-2 px-3 py-3"
-                    onSubmit={() => {
-                      dispatch({
-                        type: RecipeListActionType.SUBMIT_DELETE,
-                        data: recipe.id,
-                      });
-                      onDeleteStart(recipe.id);
-                    }}
-                  >
-                    <input type="hidden" name="intent" value="delete" />
-                    <input type="hidden" name="id" value={recipe.id} />
-                    <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                      Delete?
-                    </span>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        className="rounded-md px-2 py-1 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-                        onClick={() =>
-                          dispatch({
-                            type: RecipeListActionType.SET_CONFIRMING_ID,
-                            data: null,
-                          })
-                        }
-                        disabled={deletingId !== null}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        className="rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:pointer-events-none disabled:opacity-40 dark:bg-red-700 dark:hover:bg-red-600"
-                        disabled={deletingId !== null}
-                      >
-                        Confirm
-                      </button>
-                    </div>
-                  </fetcher.Form>
-                ) : (
-                  <button
-                    type="button"
-                    className="flex flex-1 items-center justify-center px-3 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-700 disabled:pointer-events-none disabled:opacity-40 dark:hover:bg-red-950/40 dark:hover:text-red-300"
-                    aria-label={`Delete ${recipe.name}`}
-                    disabled={deletingId !== null}
-                    onClick={() =>
-                      dispatch({
-                        type: RecipeListActionType.SET_CONFIRMING_ID,
-                        data: recipe.id,
-                      })
-                    }
-                  >
-                    {isDeleting ? (
-                      <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                        ...
-                      </span>
-                    ) : (
-                      <Trash2 className="size-4 stroke-[2]" aria-hidden />
-                    )}
-                  </button>
-                )}
-              </div>
-            </li>
+              }
+            />
           );
         })}
       </ul>

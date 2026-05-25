@@ -10,6 +10,7 @@ import (
 	"time"
 
 	types "juancavallotti.com/recipe-types"
+	repo "juancavallotti.com/recipes-repo"
 )
 
 // ErrUsage is returned after a usage message has already been written.
@@ -38,10 +39,25 @@ type SkillRepo interface {
 	GetSkillByName(ctx context.Context, name string) (types.Skill, error)
 }
 
+type EmbedRepo interface {
+	Embed(ctx context.Context, text string) ([]float32, error)
+	ReindexRecipes(ctx context.Context, opts repo.ReindexOptions) error
+	ReindexEvents(ctx context.Context, opts repo.ReindexEventsOptions) error
+	SearchRecipes(ctx context.Context, query string, limit int) ([]types.RecipeMatch, error)
+	SearchRecipeChunks(ctx context.Context, query string, limit int) ([]types.RecipeHit, error)
+	SearchEvents(ctx context.Context, query string, limit int) ([]types.EventMatch, error)
+}
+
 type CommandRepo interface {
 	RecipeRepo
 	TraceRepo
 	SkillRepo
+	EmbedRepo
+	// Close drains async work (e.g. embedding goroutines fired by write
+	// hooks) and releases the DB pool. The Runner defers this so a
+	// short-lived CLI invocation doesn't exit before in-flight indexing
+	// commits.
+	Close() error
 }
 
 type RepoFactory func() (CommandRepo, error)
@@ -101,6 +117,11 @@ func (r Runner) Run(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("repo: %w", err)
 	}
+	defer func() {
+		if cerr := repo.Close(); cerr != nil {
+			r.log().Warn("cli.repo_close_failed", "err", cerr)
+		}
+	}()
 
 	switch args[0] {
 	case "list":
@@ -203,6 +224,17 @@ func (r Runner) Run(ctx context.Context, args []string) error {
 		return r.cmdListEvents(ctx, repo, args[1:])
 	case "list-traces":
 		return r.cmdListTraces(ctx, repo, args[1:])
+	case "embed-test":
+		if len(args) != 2 {
+			return r.usageError("usage: recipes-cli embed-test <text>")
+		}
+		return r.cmdEmbedTest(ctx, repo, args[1])
+	case "reindex":
+		return r.cmdReindex(ctx, repo, args[1:])
+	case "search-recipes":
+		return r.cmdSearch(ctx, repo, "recipes", args[1:])
+	case "search-events":
+		return r.cmdSearch(ctx, repo, "events", args[1:])
 	case "list-skills":
 		if len(args) != 1 {
 			return r.usageError("usage: recipes-cli list-skills")
@@ -265,6 +297,25 @@ Commands:
   load-skill <name>             Print the markdown content of one skill to stdout.
                                 Exits non-zero if no skill has that name.
   schema                        Print the JSON Schema for create and patch payloads.
+  embed-test <text>             Smoke-test the embeddings client. Prints vector
+                                dimensions and a short preview.
+  reindex --target {recipes|events|all} [--force] [--limit N] [--json]
+                                Rebuild the semantic-search index. --force re-embeds
+                                rows that already have embeddings; without it only
+                                rows missing an embedding are processed. --json
+                                streams one report object per line, agent-readable.
+                                Exit 0 = all ok, 1 = at least one row failed,
+                                2 = bad arguments.
+  search-recipes <query> [--limit N] [--json]
+                                Semantic search over recipes. Default output is
+                                SCORE\tID\tTITLE\tCHUNK per line (chunk truncated).
+                                --json emits one slim hit per line:
+                                {id, name, chunk, score}. Use "export <id>" to
+                                fetch the full recipe when you need one.
+  search-events <query> [--limit N] [--json]
+                                Semantic search over events by user_prompt. Default
+                                output is SCORE\tEVENT_ID\tPROMPT per line; --json
+                                emits one EventMatch object per line.
 
 `
 

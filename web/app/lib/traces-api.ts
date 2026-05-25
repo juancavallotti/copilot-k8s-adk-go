@@ -7,6 +7,7 @@ export type Event = {
   started_at: string;
   ended_at: string;
   trace_count: number;
+  user_prompt?: string;
 };
 
 export type Trace = {

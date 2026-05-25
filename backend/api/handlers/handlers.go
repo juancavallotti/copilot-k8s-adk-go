@@ -51,4 +51,10 @@ func (h *Handlers) Register(r gin.IRouter) {
 		skills.PATCH("/:id", h.PatchSkill)
 		skills.DELETE("/:id", h.DeleteSkill)
 	}
+
+	search := r.Group("/search")
+	{
+		search.GET("/recipes", h.SearchRecipes)
+		search.GET("/events", h.SearchEvents)
+	}
 }

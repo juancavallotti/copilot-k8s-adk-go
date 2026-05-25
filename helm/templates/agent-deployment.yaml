@@ -77,6 +77,8 @@ spec:
               value: {{ .Values.agent.imageScratch.mountPath | quote }}
             - name: AGENT_TRACES_CLI
               value: /usr/local/bin/recipes-cli
+            - name: EMBEDDING_PROVIDER
+              value: {{ .Values.embeddingProvider | quote }}
             - name: GEMINI_API_KEY
               valueFrom:
                 secretKeyRef:

@@ -4,7 +4,7 @@
 #   mkdir -p database/data
 #   docker run --rm -p 5432:5432 -v "$(pwd)/database/data:/var/lib/postgresql/data" recipes-db
 
-FROM postgres:16-alpine
+FROM pgvector/pgvector:pg16
 
 ENV POSTGRES_DB=recipes \
     POSTGRES_HOST_AUTH_METHOD=trust

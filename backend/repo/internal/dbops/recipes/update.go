@@ -50,5 +50,6 @@ WHERE id = $1::uuid`,
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+	s.indexRecipeAsync(ctx, id)
 	return nil
 }

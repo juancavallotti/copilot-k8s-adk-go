@@ -17,6 +17,8 @@
 #   TTLSH_REGISTRY override the registry hostname (default ttl.sh)
 #   OUT_FILE       where to write the generated values file
 #                  (default temp/values.ttlsh.yaml)
+#   INGRESS_ENABLED  enable the ingress in generated values (default false)
+#   INGRESS_HOST     ingress host when enabled (default recipes.local)
 set -euo pipefail
 
 TTL="${TTL:-4h}"
@@ -25,6 +27,16 @@ DOCKER_USER="${DOCKER_USER:-juancavallotti}"
 REGISTRY="${TTLSH_REGISTRY:-ttl.sh}"
 PREFIX="${TTLSH_PREFIX:-${DOCKER_USER}}"
 OUT_FILE="${OUT_FILE:-temp/values.ttlsh.yaml}"
+INGRESS_ENABLED="${INGRESS_ENABLED:-false}"
+INGRESS_HOST="${INGRESS_HOST:-recipes.local}"
+
+case "$INGRESS_ENABLED" in
+  true|false) ;;
+  *)
+    echo "INGRESS_ENABLED must be 'true' or 'false' (got '$INGRESS_ENABLED')" >&2
+    exit 1
+    ;;
+esac
 
 case "$TTL" in
   *m|*h) ;;
@@ -141,6 +153,9 @@ web:
     repository: ${WEB_REPO}
     tag: "${TTL}"
     pullPolicy: Always
+ingress:
+  enabled: ${INGRESS_ENABLED}
+  host: "$(yaml_escape "$INGRESS_HOST")"
 EOF
 
 echo

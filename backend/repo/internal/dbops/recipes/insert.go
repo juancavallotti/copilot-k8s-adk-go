@@ -68,5 +68,6 @@ VALUES ($1::uuid, $2, $3, $4, $5)`,
 	if err := tx.Commit(); err != nil {
 		return "", err
 	}
+	s.indexRecipeAsync(ctx, id)
 	return id, nil
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	types "juancavallotti.com/recipe-types"
+	repo "juancavallotti.com/recipes-repo"
 )
 
 type fakeRepo struct {
@@ -65,6 +66,40 @@ type fakeRepo struct {
 	getSkillByNameArg    string
 	getSkillByNameResult types.Skill
 	getSkillByNameErr    error
+
+	embedCalls  int
+	embedInput  string
+	embedResult []float32
+	embedErr    error
+
+	reindexCalls   int
+	reindexOpts    repo.ReindexOptions
+	reindexReports []repo.IndexRecipeReport
+	reindexErr     error
+
+	reindexEventsCalls   int
+	reindexEventsOpts    repo.ReindexEventsOptions
+	reindexEventsReports []repo.IndexEventReport
+	reindexEventsErr     error
+
+	searchRecipesCalls   int
+	searchRecipesQuery   string
+	searchRecipesLimit   int
+	searchRecipesResult  []types.RecipeMatch
+	searchRecipesErr     error
+	searchRecipeChunksCalls  int
+	searchRecipeChunksQuery  string
+	searchRecipeChunksLimit  int
+	searchRecipeChunksResult []types.RecipeHit
+	searchRecipeChunksErr    error
+	searchEventsCalls    int
+	searchEventsQuery    string
+	searchEventsLimit    int
+	searchEventsResult   []types.EventMatch
+	searchEventsErr      error
+
+	closeCalls int
+	closeErr   error
 }
 
 type traceEntry struct {
@@ -174,6 +209,60 @@ func (f *fakeRepo) GetSkillByName(ctx context.Context, name string) (types.Skill
 	f.getSkillByNameCalls++
 	f.getSkillByNameArg = name
 	return f.getSkillByNameResult, f.getSkillByNameErr
+}
+
+func (f *fakeRepo) Embed(ctx context.Context, text string) ([]float32, error) {
+	f.embedCalls++
+	f.embedInput = text
+	return f.embedResult, f.embedErr
+}
+
+func (f *fakeRepo) ReindexRecipes(ctx context.Context, opts repo.ReindexOptions) error {
+	f.reindexCalls++
+	f.reindexOpts = opts
+	for _, rep := range f.reindexReports {
+		if opts.OnReport != nil {
+			opts.OnReport(rep)
+		}
+	}
+	return f.reindexErr
+}
+
+func (f *fakeRepo) ReindexEvents(ctx context.Context, opts repo.ReindexEventsOptions) error {
+	f.reindexEventsCalls++
+	f.reindexEventsOpts = opts
+	for _, rep := range f.reindexEventsReports {
+		if opts.OnReport != nil {
+			opts.OnReport(rep)
+		}
+	}
+	return f.reindexEventsErr
+}
+
+func (f *fakeRepo) Close() error {
+	f.closeCalls++
+	return f.closeErr
+}
+
+func (f *fakeRepo) SearchRecipes(ctx context.Context, query string, limit int) ([]types.RecipeMatch, error) {
+	f.searchRecipesCalls++
+	f.searchRecipesQuery = query
+	f.searchRecipesLimit = limit
+	return f.searchRecipesResult, f.searchRecipesErr
+}
+
+func (f *fakeRepo) SearchRecipeChunks(ctx context.Context, query string, limit int) ([]types.RecipeHit, error) {
+	f.searchRecipeChunksCalls++
+	f.searchRecipeChunksQuery = query
+	f.searchRecipeChunksLimit = limit
+	return f.searchRecipeChunksResult, f.searchRecipeChunksErr
+}
+
+func (f *fakeRepo) SearchEvents(ctx context.Context, query string, limit int) ([]types.EventMatch, error) {
+	f.searchEventsCalls++
+	f.searchEventsQuery = query
+	f.searchEventsLimit = limit
+	return f.searchEventsResult, f.searchEventsErr
 }
 
 func testRunner(stdin string, repo CommandRepo, factoryCalls *int) (Runner, *bytes.Buffer, *bytes.Buffer) {
@@ -754,5 +843,260 @@ func TestRun_ListPrintsTable(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("list output = %q, want %q", got, want)
 		}
+	}
+}
+
+func TestRun_EmbedTestPrintsDimensions(t *testing.T) {
+	t.Parallel()
+	repo := &fakeRepo{embedResult: []float32{0.1, 0.2, 0.3, 0.4, 0.5, 0.6}}
+	factoryCalls := 0
+	r, stdout, _ := testRunner("", repo, &factoryCalls)
+	if err := r.Run(context.Background(), []string{"embed-test", "hello world"}); err != nil {
+		t.Fatalf("Run embed-test: %v", err)
+	}
+	if repo.embedCalls != 1 || repo.embedInput != "hello world" {
+		t.Fatalf("embed not called as expected: calls=%d input=%q", repo.embedCalls, repo.embedInput)
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "dimensions=6") {
+		t.Fatalf("stdout = %q, want dimensions=6", out)
+	}
+}
+
+func TestRun_EmbedTestMissingArgIsUsageError(t *testing.T) {
+	t.Parallel()
+	fakeRepoVal := &fakeRepo{}
+	factoryCalls := 0
+	r, _, stderr := testRunner("", fakeRepoVal, &factoryCalls)
+	err := r.Run(context.Background(), []string{"embed-test"})
+	if !errors.Is(err, ErrUsage) {
+		t.Fatalf("err = %v, want ErrUsage", err)
+	}
+	if !strings.Contains(stderr.String(), "embed-test") {
+		t.Fatalf("stderr = %q, want usage hint", stderr.String())
+	}
+}
+
+func TestRun_ReindexRecipesJSON(t *testing.T) {
+	t.Parallel()
+	fakeRepoVal := &fakeRepo{
+		reindexReports: []repo.IndexRecipeReport{
+			{ID: "r1", Status: "ok"},
+			{ID: "r2", Status: "error", Error: "embed boom"},
+		},
+	}
+	factoryCalls := 0
+	r, stdout, _ := testRunner("", fakeRepoVal, &factoryCalls)
+	err := r.Run(context.Background(), []string{"reindex", "--target", "recipes", "--json"})
+	if err == nil {
+		t.Fatal("expected non-nil err (failed row)")
+	}
+	if !fakeRepoVal.reindexOpts.Force {
+		// default
+	}
+	out := stdout.String()
+	if !strings.Contains(out, `"id":"r1"`) || !strings.Contains(out, `"status":"ok"`) {
+		t.Fatalf("stdout = %q, want r1 ok", out)
+	}
+	if !strings.Contains(out, `"status":"error"`) || !strings.Contains(out, "embed boom") {
+		t.Fatalf("stdout = %q, want r2 error", out)
+	}
+}
+
+func TestRun_ReindexRecipesHumanOutput(t *testing.T) {
+	t.Parallel()
+	fakeRepoVal := &fakeRepo{
+		reindexReports: []repo.IndexRecipeReport{{ID: "r1", Status: "ok"}},
+	}
+	factoryCalls := 0
+	r, stdout, _ := testRunner("", fakeRepoVal, &factoryCalls)
+	if err := r.Run(context.Background(), []string{"reindex", "--target", "recipes", "--force", "--limit", "10"}); err != nil {
+		t.Fatalf("Run reindex: %v", err)
+	}
+	if !fakeRepoVal.reindexOpts.Force || fakeRepoVal.reindexOpts.Limit != 10 {
+		t.Fatalf("opts = %+v, want force=true limit=10", fakeRepoVal.reindexOpts)
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "r1\tok") {
+		t.Fatalf("stdout = %q, want r1 ok", out)
+	}
+	if !strings.Contains(out, "indexed 1 recipe(s)") {
+		t.Fatalf("stdout = %q, want summary line", out)
+	}
+}
+
+func TestRun_ClosesRepoAfterCommand(t *testing.T) {
+	t.Parallel()
+	fakeRepoVal := &fakeRepo{}
+	factoryCalls := 0
+	r, _, _ := testRunner("", fakeRepoVal, &factoryCalls)
+	if err := r.Run(context.Background(), []string{"list"}); err != nil {
+		t.Fatalf("Run list: %v", err)
+	}
+	if fakeRepoVal.closeCalls != 1 {
+		t.Fatalf("Close calls = %d, want 1", fakeRepoVal.closeCalls)
+	}
+}
+
+func TestRun_ClosesRepoEvenWhenCommandErrors(t *testing.T) {
+	t.Parallel()
+	fakeRepoVal := &fakeRepo{
+		reindexReports: []repo.IndexRecipeReport{{ID: "r1", Status: "error", Error: "boom"}},
+	}
+	factoryCalls := 0
+	r, _, _ := testRunner("", fakeRepoVal, &factoryCalls)
+	_ = r.Run(context.Background(), []string{"reindex", "--target", "recipes"})
+	if fakeRepoVal.closeCalls != 1 {
+		t.Fatalf("Close calls = %d, want 1", fakeRepoVal.closeCalls)
+	}
+}
+
+func TestRun_ReindexEventsJSON(t *testing.T) {
+	t.Parallel()
+	fakeRepoVal := &fakeRepo{
+		reindexEventsReports: []repo.IndexEventReport{
+			{ID: "inv-1", Status: "ok"},
+		},
+	}
+	factoryCalls := 0
+	r, stdout, _ := testRunner("", fakeRepoVal, &factoryCalls)
+	if err := r.Run(context.Background(), []string{"reindex", "--target", "events", "--json"}); err != nil {
+		t.Fatalf("Run reindex events: %v", err)
+	}
+	out := stdout.String()
+	if !strings.Contains(out, `"id":"inv-1"`) || !strings.Contains(out, `"status":"ok"`) {
+		t.Fatalf("stdout = %q, want inv-1 ok", out)
+	}
+}
+
+func TestRun_ReindexAllInvokesBothTargets(t *testing.T) {
+	t.Parallel()
+	fakeRepoVal := &fakeRepo{
+		reindexReports:       []repo.IndexRecipeReport{{ID: "r1", Status: "ok"}},
+		reindexEventsReports: []repo.IndexEventReport{{ID: "inv-1", Status: "ok"}},
+	}
+	factoryCalls := 0
+	r, stdout, _ := testRunner("", fakeRepoVal, &factoryCalls)
+	if err := r.Run(context.Background(), []string{"reindex", "--target", "all"}); err != nil {
+		t.Fatalf("Run reindex all: %v", err)
+	}
+	if fakeRepoVal.reindexCalls != 1 || fakeRepoVal.reindexEventsCalls != 1 {
+		t.Fatalf("calls: recipes=%d events=%d, want 1 each", fakeRepoVal.reindexCalls, fakeRepoVal.reindexEventsCalls)
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "r1\tok") || !strings.Contains(out, "inv-1\tok") {
+		t.Fatalf("stdout = %q, want both targets reported", out)
+	}
+}
+
+func TestRun_SearchRecipesHumanOutput(t *testing.T) {
+	t.Parallel()
+	fakeRepoVal := &fakeRepo{
+		searchRecipeChunksResult: []types.RecipeHit{
+			{ID: "r1", Name: "Carbonara", Chunk: "guanciale, pecorino, eggs", Score: 0.91},
+			{ID: "r2", Name: "Pesto", Chunk: "basil, pine nuts", Score: 0.72},
+		},
+	}
+	factoryCalls := 0
+	r, stdout, _ := testRunner("", fakeRepoVal, &factoryCalls)
+	if err := r.Run(context.Background(), []string{"search-recipes", "creamy", "pasta"}); err != nil {
+		t.Fatalf("Run search-recipes: %v", err)
+	}
+	if fakeRepoVal.searchRecipeChunksQuery != "creamy pasta" || fakeRepoVal.searchRecipeChunksLimit != 10 {
+		t.Fatalf("query=%q limit=%d, want \"creamy pasta\" / 10", fakeRepoVal.searchRecipeChunksQuery, fakeRepoVal.searchRecipeChunksLimit)
+	}
+	out := stdout.String()
+	for _, want := range []string{"SCORE", "ID", "TITLE", "CHUNK", "0.9100", "r1", "Carbonara", "guanciale", "0.7200", "r2", "Pesto", "basil"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("stdout = %q, missing %q", out, want)
+		}
+	}
+}
+
+func TestRun_SearchRecipesJSON(t *testing.T) {
+	t.Parallel()
+	fakeRepoVal := &fakeRepo{
+		searchRecipeChunksResult: []types.RecipeHit{
+			{ID: "r1", Name: "Carbonara", Chunk: "eggs, pecorino", Score: 0.91},
+		},
+	}
+	factoryCalls := 0
+	r, stdout, _ := testRunner("", fakeRepoVal, &factoryCalls)
+	if err := r.Run(context.Background(), []string{"search-recipes", "pasta", "--limit", "5", "--json"}); err != nil {
+		t.Fatalf("Run search-recipes --json: %v", err)
+	}
+	if fakeRepoVal.searchRecipeChunksLimit != 5 {
+		t.Fatalf("limit = %d, want 5", fakeRepoVal.searchRecipeChunksLimit)
+	}
+	out := stdout.String()
+	for _, want := range []string{`"id":"r1"`, `"name":"Carbonara"`, `"chunk":"eggs, pecorino"`, `"score":0.91`} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("stdout = %q, missing %q", out, want)
+		}
+	}
+	if strings.Contains(out, "image_base64") || strings.Contains(out, "photos") {
+		t.Fatalf("stdout = %q, slim JSON should not contain recipe photos", out)
+	}
+}
+
+func TestRun_SearchRecipesDisabledReportsToStderr(t *testing.T) {
+	t.Parallel()
+	fakeRepoVal := &fakeRepo{searchRecipeChunksErr: repo.ErrSearchDisabled}
+	factoryCalls := 0
+	r, _, stderr := testRunner("", fakeRepoVal, &factoryCalls)
+	err := r.Run(context.Background(), []string{"search-recipes", "pasta"})
+	if !errors.Is(err, repo.ErrSearchDisabled) {
+		t.Fatalf("err = %v, want ErrSearchDisabled", err)
+	}
+	if !strings.Contains(stderr.String(), "search disabled") {
+		t.Fatalf("stderr = %q, want hint about disabled search", stderr.String())
+	}
+}
+
+func TestRun_SearchEventsHumanOutput(t *testing.T) {
+	t.Parallel()
+	fakeRepoVal := &fakeRepo{
+		searchEventsResult: []types.EventMatch{
+			{Event: types.Event{EventID: "inv-1", UserPrompt: "find recipes with chicken"}, Score: 0.8},
+		},
+	}
+	factoryCalls := 0
+	r, stdout, _ := testRunner("", fakeRepoVal, &factoryCalls)
+	if err := r.Run(context.Background(), []string{"search-events", "chicken"}); err != nil {
+		t.Fatalf("Run search-events: %v", err)
+	}
+	out := stdout.String()
+	for _, want := range []string{"SCORE", "EVENT_ID", "PROMPT", "0.8000", "inv-1", "find recipes with chicken"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("stdout = %q, missing %q", out, want)
+		}
+	}
+}
+
+func TestRun_SearchMissingQueryIsUsageError(t *testing.T) {
+	t.Parallel()
+	fakeRepoVal := &fakeRepo{}
+	factoryCalls := 0
+	r, _, stderr := testRunner("", fakeRepoVal, &factoryCalls)
+	err := r.Run(context.Background(), []string{"search-recipes"})
+	if !errors.Is(err, ErrUsage) {
+		t.Fatalf("err = %v, want ErrUsage", err)
+	}
+	if !strings.Contains(stderr.String(), "search-recipes") {
+		t.Fatalf("stderr = %q, want usage hint", stderr.String())
+	}
+}
+
+func TestRun_ReindexMissingTargetIsUsageError(t *testing.T) {
+	t.Parallel()
+	fakeRepoVal := &fakeRepo{}
+	factoryCalls := 0
+	r, _, stderr := testRunner("", fakeRepoVal, &factoryCalls)
+	err := r.Run(context.Background(), []string{"reindex"})
+	if !errors.Is(err, ErrUsage) {
+		t.Fatalf("err = %v, want ErrUsage", err)
+	}
+	if !strings.Contains(stderr.String(), "--target") {
+		t.Fatalf("stderr = %q, want usage hint", stderr.String())
 	}
 }

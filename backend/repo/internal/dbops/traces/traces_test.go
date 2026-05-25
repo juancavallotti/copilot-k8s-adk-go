@@ -51,7 +51,7 @@ func TestStore_InsertTrace_success(t *testing.T) {
 
 	mock.ExpectBegin()
 	mock.ExpectExec("INSERT INTO events").
-		WithArgs("inv-abc", ts).
+		WithArgs("inv-abc", ts, "").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec("INSERT INTO traces").
 		WithArgs("inv-abc", ts, []byte(data)).
@@ -84,7 +84,7 @@ func TestStore_InsertTrace_convertsToUTC(t *testing.T) {
 
 	mock.ExpectBegin()
 	mock.ExpectExec("INSERT INTO events").
-		WithArgs("inv-tz", wantUTC).
+		WithArgs("inv-tz", wantUTC, "").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec("INSERT INTO traces").
 		WithArgs("inv-tz", wantUTC, sqlmock.AnyArg()).
@@ -92,6 +92,64 @@ func TestStore_InsertTrace_convertsToUTC(t *testing.T) {
 	mock.ExpectCommit()
 
 	if err := s.InsertTrace(context.Background(), "inv-tz", nyTime, json.RawMessage(`{}`)); err != nil {
+		t.Fatalf("InsertTrace: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStore_InsertTrace_persistsUserPrompt(t *testing.T) {
+	t.Parallel()
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	s := NewStore(db)
+
+	ts := time.Date(2026, 5, 22, 10, 0, 0, 0, time.UTC)
+	data := json.RawMessage(`{"msg":"llm.start","user_prompt":"make me pasta"}`)
+
+	mock.ExpectBegin()
+	mock.ExpectExec("INSERT INTO events").
+		WithArgs("inv-p", ts, "make me pasta").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO traces").
+		WithArgs("inv-p", ts, []byte(data)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	if err := s.InsertTrace(context.Background(), "inv-p", ts, data); err != nil {
+		t.Fatalf("InsertTrace: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStore_InsertTrace_unwrapsUserMessage(t *testing.T) {
+	t.Parallel()
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	s := NewStore(db)
+
+	ts := time.Date(2026, 5, 22, 10, 0, 0, 0, time.UTC)
+	data := json.RawMessage(`{"user_prompt":"{\"userMessage\":\"hello world\"}"}`)
+
+	mock.ExpectBegin()
+	mock.ExpectExec("INSERT INTO events").
+		WithArgs("inv-u", ts, "hello world").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO traces").
+		WithArgs("inv-u", ts, sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	if err := s.InsertTrace(context.Background(), "inv-u", ts, data); err != nil {
 		t.Fatalf("InsertTrace: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -113,7 +171,7 @@ func TestStore_InsertTrace_rollsBackOnTraceInsertError(t *testing.T) {
 
 	mock.ExpectBegin()
 	mock.ExpectExec("INSERT INTO events").
-		WithArgs("inv-x", ts).
+		WithArgs("inv-x", ts, "").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec("INSERT INTO traces").
 		WithArgs("inv-x", ts, sqlmock.AnyArg()).
@@ -147,7 +205,7 @@ func TestStore_ListEvents_empty(t *testing.T) {
 
 	mock.ExpectQuery("FROM events").
 		WithArgs(10, 0).
-		WillReturnRows(sqlmock.NewRows([]string{"event_id", "started_at", "ended_at", "trace_count"}))
+		WillReturnRows(sqlmock.NewRows([]string{"event_id", "started_at", "ended_at", "trace_count", "user_prompt"}))
 
 	out, err := s.ListEvents(context.Background(), 10, 0)
 	if err != nil {
@@ -175,9 +233,9 @@ func TestStore_ListEvents_returnsRows(t *testing.T) {
 
 	mock.ExpectQuery("FROM events").
 		WithArgs(50, 0).
-		WillReturnRows(sqlmock.NewRows([]string{"event_id", "started_at", "ended_at", "trace_count"}).
-			AddRow("inv-a", t1, t2, 3).
-			AddRow("inv-b", t1, t1, 1))
+		WillReturnRows(sqlmock.NewRows([]string{"event_id", "started_at", "ended_at", "trace_count", "user_prompt"}).
+			AddRow("inv-a", t1, t2, 3, "make pasta").
+			AddRow("inv-b", t1, t1, 1, ""))
 
 	out, err := s.ListEvents(context.Background(), 50, 0)
 	if err != nil {
@@ -191,6 +249,12 @@ func TestStore_ListEvents_returnsRows(t *testing.T) {
 	}
 	if !out[0].StartedAt.Equal(t1) || !out[0].EndedAt.Equal(t2) {
 		t.Fatalf("out[0] times = %v..%v", out[0].StartedAt, out[0].EndedAt)
+	}
+	if out[0].UserPrompt != "make pasta" {
+		t.Fatalf("out[0].UserPrompt = %q, want %q", out[0].UserPrompt, "make pasta")
+	}
+	if out[1].UserPrompt != "" {
+		t.Fatalf("out[1].UserPrompt = %q, want empty", out[1].UserPrompt)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

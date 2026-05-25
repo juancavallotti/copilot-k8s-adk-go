@@ -1,6 +1,6 @@
-import { Activity, BookOpen, ChefHat, CirclePlus, Sparkles } from "lucide-react";
+import { Activity, BookOpen, ChefHat, CirclePlus, Search, Sparkles } from "lucide-react";
 import { useEffect } from "react";
-import { NavLink, Outlet, useLoaderData } from "react-router";
+import { Form, NavLink, Outlet, useLoaderData, useSearchParams } from "react-router";
 
 import { AgentChat } from "~/components/agent-chat";
 import { getAgentBaseURL } from "~/lib/agent-base-url";
@@ -85,6 +85,31 @@ export default function AppLayout() {
     <AgentPreferencesProvider>
       <AppLayoutContents />
     </AgentPreferencesProvider>
+  );
+}
+
+function HeaderSearch() {
+  // Pre-fill the input from the current ?q so navigating around the
+  // results page doesn't wipe the user's query.
+  const [params] = useSearchParams();
+  const initial = params.get("q") ?? "";
+  return (
+    <Form method="get" action="/search" className="w-full max-w-xs" role="search">
+      <label className="relative block">
+        <span className="sr-only">Search recipes</span>
+        <Search
+          className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-zinc-400 dark:text-zinc-500"
+          aria-hidden
+        />
+        <input
+          type="search"
+          name="q"
+          defaultValue={initial}
+          placeholder="Search recipes…"
+          className="w-full rounded-lg border border-zinc-200 bg-white py-1.5 pl-8 pr-3 text-sm text-zinc-900 outline-none transition-colors placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-2 focus:ring-zinc-400/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-500/25"
+        />
+      </label>
+    </Form>
   );
 }
 
@@ -175,10 +200,11 @@ function AppLayoutContents() {
         </nav>
       </aside>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="border-b border-zinc-200 bg-white px-6 py-4 dark:border-zinc-800 dark:bg-zinc-900">
+        <header className="flex items-center justify-between gap-4 border-b border-zinc-200 bg-white px-6 py-4 dark:border-zinc-800 dark:bg-zinc-900">
           <h1 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Workspace
           </h1>
+          <HeaderSearch />
         </header>
         <main className="flex-1 overflow-auto p-6">
           <Outlet />

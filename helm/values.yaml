@@ -2,6 +2,11 @@
 nameOverride: ""
 fullnameOverride: ""
 
+# Embedding provider used by both the backend (/search) and the agent.
+# Either "gemini" or "openai". The backend will only inject the key
+# matching this choice; the agent receives whatever keys are set.
+embeddingProvider: gemini
+
 postgres:
   image:
     repository: juancavallotti/recipes-db

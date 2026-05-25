@@ -12,5 +12,6 @@ export default [
     route("traces/:event_id", "routes/traces.$event_id.tsx"),
     route("skills", "routes/skills._index.tsx"),
     route("skills/:id", "routes/skills.$id.tsx"),
+    route("search", "routes/search.tsx"),
   ]),
 ] satisfies RouteConfig;

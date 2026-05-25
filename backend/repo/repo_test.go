@@ -83,6 +83,24 @@ func (f *fakeRecipeStore) DeleteRecipe(ctx context.Context, id string) error {
 	return nil
 }
 
+func (f *fakeRecipeStore) IndexRecipe(ctx context.Context, id string) error {
+	return nil
+}
+
+func (f *fakeRecipeStore) ReindexRecipes(ctx context.Context, opts recipeops.ReindexOptions) error {
+	return nil
+}
+
+func (f *fakeRecipeStore) SearchRecipes(ctx context.Context, query string, limit int) ([]types.RecipeMatch, error) {
+	return nil, nil
+}
+
+func (f *fakeRecipeStore) SearchRecipeChunks(ctx context.Context, query string, limit int) ([]types.RecipeHit, error) {
+	return nil, nil
+}
+
+func (f *fakeRecipeStore) Wait() {}
+
 type fakeTraceStore struct {
 	insertEventID      string
 	insertOccurredAt   time.Time
@@ -125,6 +143,20 @@ func (f *fakeTraceStore) DeleteEventByID(ctx context.Context, eventID string) er
 	f.deleteEventByIDArg = eventID
 	return nil
 }
+
+func (f *fakeTraceStore) IndexEvent(ctx context.Context, eventID string, force bool) error {
+	return nil
+}
+
+func (f *fakeTraceStore) ReindexEvents(ctx context.Context, opts traceops.ReindexEventsOptions) error {
+	return nil
+}
+
+func (f *fakeTraceStore) SearchEvents(ctx context.Context, query string, limit int) ([]types.EventMatch, error) {
+	return nil, nil
+}
+
+func (f *fakeTraceStore) Wait() {}
 
 type fakeSkillStore struct {
 	getSkillID          string

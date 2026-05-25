@@ -73,6 +73,27 @@ spec:
                 secretKeyRef:
                   name: {{ include "recipes.fullname" . }}-postgres
                   key: postgres-password
+            # Embedding provider for /search. Drives which API key is
+            # injected below; the Secret is shared with the agent.
+            - name: EMBEDDING_PROVIDER
+              value: {{ .Values.embeddingProvider | quote }}
+            {{- if eq .Values.embeddingProvider "gemini" }}
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "recipes.agent.geminiApiKeySecretName" . }}
+                  key: {{ .Values.agent.geminiApiKeySecret.key | quote }}
+                  optional: true
+            {{- else if eq .Values.embeddingProvider "openai" }}
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "recipes.agent.geminiApiKeySecretName" . }}
+                  key: {{ .Values.agent.openaiApiKeySecret.key | quote }}
+                  optional: true
+            {{- else }}
+            {{- fail (printf "embeddingProvider must be \"gemini\" or \"openai\", got %q" .Values.embeddingProvider) }}
+            {{- end }}
           {{- with .Values.backend.resources }}
           resources:
             {{- toYaml . | nindent 12 }}

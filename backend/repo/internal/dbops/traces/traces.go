@@ -21,6 +21,8 @@ func (s *Store) InsertTrace(ctx context.Context, eventID string, occurredAt time
 	}
 	ts := occurredAt.UTC()
 
+	prompt := extractUserPrompt(data)
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -28,13 +30,14 @@ func (s *Store) InsertTrace(ctx context.Context, eventID string, occurredAt time
 	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.ExecContext(ctx, `
-INSERT INTO events (event_id, started_at, ended_at, trace_count)
-VALUES ($1, $2, $2, 1)
+INSERT INTO events (event_id, started_at, ended_at, trace_count, user_prompt)
+VALUES ($1, $2, $2, 1, NULLIF($3, ''))
 ON CONFLICT (event_id) DO UPDATE SET
     started_at  = LEAST(events.started_at, EXCLUDED.started_at),
     ended_at    = GREATEST(events.ended_at, EXCLUDED.ended_at),
-    trace_count = events.trace_count + 1`,
-		eventID, ts,
+    trace_count = events.trace_count + 1,
+    user_prompt = COALESCE(NULLIF(events.user_prompt, ''), EXCLUDED.user_prompt)`,
+		eventID, ts, prompt,
 	); err != nil {
 		return err
 	}
@@ -44,7 +47,61 @@ ON CONFLICT (event_id) DO UPDATE SET
 	); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// Fire embedding only when this trace actually carried a prompt;
+	// IndexEvent is gated on event_embeddings row existence so dup-
+	// licate traces for the same event don't re-embed.
+	if prompt != "" {
+		s.indexEventAsync(ctx, eventID)
+	}
+	return nil
+}
+
+// extractUserPrompt pulls a non-empty user_prompt string out of a trace's
+// data payload. Some emitters wrap the prompt as `{"userMessage":"…"}`;
+// normalizeUserPrompt unwraps that variant.
+func extractUserPrompt(data json.RawMessage) string {
+	if len(data) == 0 {
+		return ""
+	}
+	var parsed map[string]json.RawMessage
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return ""
+	}
+	raw, ok := parsed["user_prompt"]
+	if !ok {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return ""
+	}
+	return normalizeUserPrompt(s)
+}
+
+// normalizeUserPrompt mirrors web/app/lib/trace-grouping.ts so backend and
+// frontend agree on what counts as the prompt string. If the value is a
+// JSON object with a "userMessage" string field, return that; otherwise
+// return the trimmed input.
+func normalizeUserPrompt(prompt string) string {
+	raw := strings.TrimSpace(prompt)
+	if raw == "" {
+		return ""
+	}
+	var parsed map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &parsed); err == nil {
+		if msgRaw, ok := parsed["userMessage"]; ok {
+			var msg string
+			if err := json.Unmarshal(msgRaw, &msg); err == nil {
+				if trimmed := strings.TrimSpace(msg); trimmed != "" {
+					return trimmed
+				}
+			}
+		}
+	}
+	return raw
 }
 
 // ListEvents returns events newest-first by ended_at. limit caps the page size.
@@ -56,7 +113,7 @@ func (s *Store) ListEvents(ctx context.Context, limit, offset int) ([]types.Even
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT event_id, started_at, ended_at, trace_count
+SELECT event_id, started_at, ended_at, trace_count, COALESCE(user_prompt, '')
 FROM events
 ORDER BY ended_at DESC, event_id
 LIMIT $1 OFFSET $2`, limit, offset)
@@ -67,7 +124,7 @@ LIMIT $1 OFFSET $2`, limit, offset)
 	out := make([]types.Event, 0, limit)
 	for rows.Next() {
 		var e types.Event
-		if err := rows.Scan(&e.EventID, &e.StartedAt, &e.EndedAt, &e.TraceCount); err != nil {
+		if err := rows.Scan(&e.EventID, &e.StartedAt, &e.EndedAt, &e.TraceCount, &e.UserPrompt); err != nil {
 			return nil, err
 		}
 		out = append(out, e)

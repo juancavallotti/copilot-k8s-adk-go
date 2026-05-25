@@ -15,20 +15,53 @@ import (
 	recipeops "juancavallotti.com/recipes-repo/internal/dbops/recipes"
 	skillops "juancavallotti.com/recipes-repo/internal/dbops/skills"
 	traceops "juancavallotti.com/recipes-repo/internal/dbops/traces"
+	"juancavallotti.com/recipes-repo/internal/embeddings"
 	recipesvc "juancavallotti.com/recipes-repo/internal/service/recipes"
 	skillsvc "juancavallotti.com/recipes-repo/internal/service/skills"
 	tracesvc "juancavallotti.com/recipes-repo/internal/service/traces"
 )
 
+// Re-exports of internal types so external modules (cli, api) can use
+// them without reaching into internal packages.
+type (
+	ReindexOptions       = recipeops.ReindexOptions
+	IndexRecipeReport    = recipeops.IndexRecipeReport
+	ReindexEventsOptions = traceops.ReindexEventsOptions
+	IndexEventReport     = traceops.IndexEventReport
+)
+
+// ErrSearchDisabled is returned by Search* when no embedding API key
+// is configured. Re-exported so HTTP handlers and the CLI can branch
+// on it without importing the internal embeddings package.
+var ErrSearchDisabled = embeddings.ErrDisabled
+
 type Repo struct {
-	recipes *recipesvc.Service
-	traces  *tracesvc.Service
-	skills  *skillsvc.Service
-	pool    *sql.DB
+	recipes    *recipesvc.Service
+	traces     *tracesvc.Service
+	skills     *skillsvc.Service
+	embeddings embeddings.Client
+	pool       *sql.DB
+}
+
+// Embed produces a vector embedding for the given text. Returns
+// embeddings.ErrDisabled when no API key is configured.
+func (r *Repo) Embed(ctx context.Context, text string) ([]float32, error) {
+	return r.embeddings.Embed(ctx, text)
 }
 
 func (r *Repo) Ping(ctx context.Context) error {
 	return r.pool.PingContext(ctx)
+}
+
+// Close drains in-flight async embedding goroutines (recipes and
+// traces) and then closes the underlying *sql.DB pool. Callers should
+// defer this — short-lived processes (CLI invocations) would otherwise
+// orphan the goroutines fired by write hooks. Prefer to defer it
+// exactly once per Repo; lib/pq errors on a second pool.Close.
+func (r *Repo) Close() error {
+	r.recipes.Wait()
+	r.traces.Wait()
+	return r.pool.Close()
 }
 
 func (r *Repo) GetRecipes(ctx context.Context) ([]types.Recipe, error) {
@@ -65,6 +98,47 @@ func (r *Repo) DeleteRecipe(ctx context.Context, id string) error {
 
 func (r *Repo) ImportRecipe(ctx context.Context, recipe types.Recipe) error {
 	return r.recipes.ImportRecipe(ctx, recipe)
+}
+
+// IndexRecipe rebuilds the embedding rows for one recipe.
+func (r *Repo) IndexRecipe(ctx context.Context, id string) error {
+	return r.recipes.IndexRecipe(ctx, id)
+}
+
+// ReindexRecipes streams a bulk reindex pass. Use this from the CLI
+// (and the agent) to backfill or rebuild the embedding table.
+func (r *Repo) ReindexRecipes(ctx context.Context, opts ReindexOptions) error {
+	return r.recipes.ReindexRecipes(ctx, opts)
+}
+
+// IndexEvent rebuilds the embedding row for one event.
+func (r *Repo) IndexEvent(ctx context.Context, eventID string, force bool) error {
+	return r.traces.IndexEvent(ctx, eventID, force)
+}
+
+// ReindexEvents streams a bulk reindex of events whose user_prompt
+// is populated.
+func (r *Repo) ReindexEvents(ctx context.Context, opts ReindexEventsOptions) error {
+	return r.traces.ReindexEvents(ctx, opts)
+}
+
+// SearchRecipes runs a semantic-similarity search over recipe
+// embeddings and returns matches ranked by best chunk score.
+func (r *Repo) SearchRecipes(ctx context.Context, query string, limit int) ([]types.RecipeMatch, error) {
+	return r.recipes.SearchRecipes(ctx, query, limit)
+}
+
+// SearchRecipeChunks is the slim variant of SearchRecipes: it returns
+// id/name/best-chunk/score per hit rather than the full Recipe. Used by
+// the CLI so an agent doesn't pull photo base64 through its context.
+func (r *Repo) SearchRecipeChunks(ctx context.Context, query string, limit int) ([]types.RecipeHit, error) {
+	return r.recipes.SearchRecipeChunks(ctx, query, limit)
+}
+
+// SearchEvents runs a semantic-similarity search over event
+// embeddings (one per event, keyed off user_prompt).
+func (r *Repo) SearchEvents(ctx context.Context, query string, limit int) ([]types.EventMatch, error) {
+	return r.traces.SearchEvents(ctx, query, limit)
 }
 
 func (r *Repo) LogTrace(ctx context.Context, eventID string, occurredAt time.Time, data json.RawMessage) error {
@@ -125,11 +199,19 @@ func NewRepo() (*Repo, error) {
 		return nil, err
 	}
 
+	embedClient, embedProvider := embeddings.NewFromEnv()
+	if embedProvider == embeddings.ProviderNoop {
+		slog.Info("repo.embeddings_disabled", "reason", "no API key configured (set GEMINI_API_KEY or OPENAI_API_KEY)")
+	} else {
+		slog.Info("repo.embeddings_enabled", "provider", string(embedProvider), "dims", embeddings.Dimensions)
+	}
+
 	slog.Info("repo.initialized", "database", dbName)
 	return &Repo{
-		recipes: recipesvc.NewService(recipeops.NewStore(pool)),
-		traces:  tracesvc.NewService(traceops.NewStore(pool)),
-		skills:  skillsvc.NewService(skillops.NewStore(pool)),
-		pool:    pool,
+		recipes:    recipesvc.NewService(recipeops.NewStore(pool, recipeops.WithEmbedClient(embedClient))),
+		traces:     tracesvc.NewService(traceops.NewStore(pool, traceops.WithEmbedClient(embedClient))),
+		skills:     skillsvc.NewService(skillops.NewStore(pool)),
+		embeddings: embedClient,
+		pool:       pool,
 	}, nil
 }
