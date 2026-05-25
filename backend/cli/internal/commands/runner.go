@@ -10,6 +10,7 @@ import (
 	"time"
 
 	types "juancavallotti.com/recipe-types"
+	repo "juancavallotti.com/recipes-repo"
 )
 
 // ErrUsage is returned after a usage message has already been written.
@@ -40,6 +41,7 @@ type SkillRepo interface {
 
 type EmbedRepo interface {
 	Embed(ctx context.Context, text string) ([]float32, error)
+	ReindexRecipes(ctx context.Context, opts repo.ReindexOptions) error
 }
 
 type CommandRepo interface {
@@ -213,6 +215,8 @@ func (r Runner) Run(ctx context.Context, args []string) error {
 			return r.usageError("usage: recipes-cli embed-test <text>")
 		}
 		return r.cmdEmbedTest(ctx, repo, args[1])
+	case "reindex":
+		return r.cmdReindex(ctx, repo, args[1:])
 	case "list-skills":
 		if len(args) != 1 {
 			return r.usageError("usage: recipes-cli list-skills")
@@ -277,6 +281,13 @@ Commands:
   schema                        Print the JSON Schema for create and patch payloads.
   embed-test <text>             Smoke-test the embeddings client. Prints vector
                                 dimensions and a short preview.
+  reindex --target {recipes|events|all} [--force] [--limit N] [--json]
+                                Rebuild the semantic-search index. --force re-embeds
+                                rows that already have embeddings; without it only
+                                rows missing an embedding are processed. --json
+                                streams one report object per line, agent-readable.
+                                Exit 0 = all ok, 1 = at least one row failed,
+                                2 = bad arguments.
 
 `
 

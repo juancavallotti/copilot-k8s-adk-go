@@ -21,6 +21,13 @@ import (
 	tracesvc "juancavallotti.com/recipes-repo/internal/service/traces"
 )
 
+// Re-exports of internal types so external modules (cli, api) can use
+// them without reaching into internal packages.
+type (
+	ReindexOptions    = recipeops.ReindexOptions
+	IndexRecipeReport = recipeops.IndexRecipeReport
+)
+
 type Repo struct {
 	recipes    *recipesvc.Service
 	traces     *tracesvc.Service
@@ -73,6 +80,17 @@ func (r *Repo) DeleteRecipe(ctx context.Context, id string) error {
 
 func (r *Repo) ImportRecipe(ctx context.Context, recipe types.Recipe) error {
 	return r.recipes.ImportRecipe(ctx, recipe)
+}
+
+// IndexRecipe rebuilds the embedding rows for one recipe.
+func (r *Repo) IndexRecipe(ctx context.Context, id string) error {
+	return r.recipes.IndexRecipe(ctx, id)
+}
+
+// ReindexRecipes streams a bulk reindex pass. Use this from the CLI
+// (and the agent) to backfill or rebuild the embedding table.
+func (r *Repo) ReindexRecipes(ctx context.Context, opts ReindexOptions) error {
+	return r.recipes.ReindexRecipes(ctx, opts)
 }
 
 func (r *Repo) LogTrace(ctx context.Context, eventID string, occurredAt time.Time, data json.RawMessage) error {
@@ -142,7 +160,7 @@ func NewRepo() (*Repo, error) {
 
 	slog.Info("repo.initialized", "database", dbName)
 	return &Repo{
-		recipes:    recipesvc.NewService(recipeops.NewStore(pool)),
+		recipes:    recipesvc.NewService(recipeops.NewStore(pool, recipeops.WithEmbedClient(embedClient))),
 		traces:     tracesvc.NewService(traceops.NewStore(pool)),
 		skills:     skillsvc.NewService(skillops.NewStore(pool)),
 		embeddings: embedClient,

@@ -83,6 +83,14 @@ func (f *fakeRecipeStore) DeleteRecipe(ctx context.Context, id string) error {
 	return nil
 }
 
+func (f *fakeRecipeStore) IndexRecipe(ctx context.Context, id string) error {
+	return nil
+}
+
+func (f *fakeRecipeStore) ReindexRecipes(ctx context.Context, opts recipeops.ReindexOptions) error {
+	return nil
+}
+
 type fakeTraceStore struct {
 	insertEventID      string
 	insertOccurredAt   time.Time
