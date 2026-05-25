@@ -63,6 +63,11 @@ tasks:
     cmds:
       - ./scripts/ttlsh-publish.sh
 
+  values:dockerhub:
+    desc: Render temp/values.dockerhub.yaml pointing at Docker Hub images (ingress enabled, tag=latest by default)
+    cmds:
+      - ./scripts/dockerhub-values.sh
+
   release:images:
     desc: Build and push all images tagged {{.VERSION}} and latest (version from helm/Chart.yaml)
     deps: [build:images:release]
