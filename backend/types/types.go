@@ -55,6 +55,17 @@ type RecipeMatch struct {
 	Score float64 `json:"score"`
 }
 
+// RecipeHit is the slim form of a search result: enough for an agent
+// to decide whether to fetch the full recipe, without dragging photo
+// base64 through the context window. Score is the cosine similarity
+// in [0,1] of the best-matching chunk; Chunk is that chunk's text.
+type RecipeHit struct {
+	ID    string  `json:"id"`
+	Name  string  `json:"name"`
+	Chunk string  `json:"chunk"`
+	Score float64 `json:"score"`
+}
+
 // EventMatch is a search result: a full event plus a similarity
 // score in [0,1].
 type EventMatch struct {

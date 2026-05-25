@@ -88,6 +88,10 @@ func (f *fakeStore) SearchRecipes(ctx context.Context, query string, limit int) 
 	return nil, nil
 }
 
+func (f *fakeStore) SearchRecipeChunks(ctx context.Context, query string, limit int) ([]types.RecipeHit, error) {
+	return nil, nil
+}
+
 func (f *fakeStore) Wait() {}
 
 func TestService_GetRecipes_NoValidation(t *testing.T) {

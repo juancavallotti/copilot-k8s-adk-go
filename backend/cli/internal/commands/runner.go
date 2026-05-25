@@ -44,6 +44,7 @@ type EmbedRepo interface {
 	ReindexRecipes(ctx context.Context, opts repo.ReindexOptions) error
 	ReindexEvents(ctx context.Context, opts repo.ReindexEventsOptions) error
 	SearchRecipes(ctx context.Context, query string, limit int) ([]types.RecipeMatch, error)
+	SearchRecipeChunks(ctx context.Context, query string, limit int) ([]types.RecipeHit, error)
 	SearchEvents(ctx context.Context, query string, limit int) ([]types.EventMatch, error)
 }
 
@@ -307,8 +308,10 @@ Commands:
                                 2 = bad arguments.
   search-recipes <query> [--limit N] [--json]
                                 Semantic search over recipes. Default output is
-                                SCORE\tID\tTITLE per line. --json emits one full
-                                RecipeMatch JSON object per line for agent use.
+                                SCORE\tID\tTITLE\tCHUNK per line (chunk truncated).
+                                --json emits one slim hit per line:
+                                {id, name, chunk, score}. Use "export <id>" to
+                                fetch the full recipe when you need one.
   search-events <query> [--limit N] [--json]
                                 Semantic search over events by user_prompt. Default
                                 output is SCORE\tEVENT_ID\tPROMPT per line; --json

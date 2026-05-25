@@ -245,3 +245,62 @@ LIMIT $2`,
 	}
 	return matches, nil
 }
+
+// SearchRecipeChunks runs the same semantic search as SearchRecipes but
+// returns a slim per-recipe row: id, name, the best-matching chunk's
+// source text, and the chunk's score. Used by agent-facing callers
+// (the CLI) where pulling full Recipe objects — including photo
+// base64 — would blow up context size.
+func (s *Store) SearchRecipeChunks(ctx context.Context, query string, limit int) ([]types.RecipeHit, error) {
+	if s.db == nil {
+		return nil, errNilDB
+	}
+	if _, disabled := s.embed.(embeddings.Noop); disabled {
+		return nil, embeddings.ErrDisabled
+	}
+	if strings.TrimSpace(query) == "" {
+		return nil, errors.New("dbops/recipes.SearchRecipeChunks: empty query")
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+
+	vec, err := s.embed.Embed(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("embed query: %w", err)
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, name, chunk, score
+FROM (
+  SELECT DISTINCT ON (re.recipe_id)
+    re.recipe_id::text AS id,
+    r.name            AS name,
+    re.source_text    AS chunk,
+    1 - (re.embedding <=> $1::vector) AS score
+  FROM recipe_embeddings re
+  JOIN recipes r ON r.id = re.recipe_id
+  ORDER BY re.recipe_id, re.embedding <=> $1::vector ASC
+) best
+ORDER BY score DESC
+LIMIT $2`,
+		embeddings.FormatVector(vec), limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	hits := make([]types.RecipeHit, 0, limit)
+	for rows.Next() {
+		var h types.RecipeHit
+		if err := rows.Scan(&h.ID, &h.Name, &h.Chunk, &h.Score); err != nil {
+			return nil, err
+		}
+		hits = append(hits, h)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return hits, nil
+}

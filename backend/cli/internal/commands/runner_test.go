@@ -87,6 +87,11 @@ type fakeRepo struct {
 	searchRecipesLimit   int
 	searchRecipesResult  []types.RecipeMatch
 	searchRecipesErr     error
+	searchRecipeChunksCalls  int
+	searchRecipeChunksQuery  string
+	searchRecipeChunksLimit  int
+	searchRecipeChunksResult []types.RecipeHit
+	searchRecipeChunksErr    error
 	searchEventsCalls    int
 	searchEventsQuery    string
 	searchEventsLimit    int
@@ -244,6 +249,13 @@ func (f *fakeRepo) SearchRecipes(ctx context.Context, query string, limit int) (
 	f.searchRecipesQuery = query
 	f.searchRecipesLimit = limit
 	return f.searchRecipesResult, f.searchRecipesErr
+}
+
+func (f *fakeRepo) SearchRecipeChunks(ctx context.Context, query string, limit int) ([]types.RecipeHit, error) {
+	f.searchRecipeChunksCalls++
+	f.searchRecipeChunksQuery = query
+	f.searchRecipeChunksLimit = limit
+	return f.searchRecipeChunksResult, f.searchRecipeChunksErr
 }
 
 func (f *fakeRepo) SearchEvents(ctx context.Context, query string, limit int) ([]types.EventMatch, error) {
@@ -980,9 +992,9 @@ func TestRun_ReindexAllInvokesBothTargets(t *testing.T) {
 func TestRun_SearchRecipesHumanOutput(t *testing.T) {
 	t.Parallel()
 	fakeRepoVal := &fakeRepo{
-		searchRecipesResult: []types.RecipeMatch{
-			{Recipe: types.Recipe{ID: "r1", Name: "Carbonara"}, Score: 0.91},
-			{Recipe: types.Recipe{ID: "r2", Name: "Pesto"}, Score: 0.72},
+		searchRecipeChunksResult: []types.RecipeHit{
+			{ID: "r1", Name: "Carbonara", Chunk: "guanciale, pecorino, eggs", Score: 0.91},
+			{ID: "r2", Name: "Pesto", Chunk: "basil, pine nuts", Score: 0.72},
 		},
 	}
 	factoryCalls := 0
@@ -990,11 +1002,11 @@ func TestRun_SearchRecipesHumanOutput(t *testing.T) {
 	if err := r.Run(context.Background(), []string{"search-recipes", "creamy", "pasta"}); err != nil {
 		t.Fatalf("Run search-recipes: %v", err)
 	}
-	if fakeRepoVal.searchRecipesQuery != "creamy pasta" || fakeRepoVal.searchRecipesLimit != 10 {
-		t.Fatalf("query=%q limit=%d, want \"creamy pasta\" / 10", fakeRepoVal.searchRecipesQuery, fakeRepoVal.searchRecipesLimit)
+	if fakeRepoVal.searchRecipeChunksQuery != "creamy pasta" || fakeRepoVal.searchRecipeChunksLimit != 10 {
+		t.Fatalf("query=%q limit=%d, want \"creamy pasta\" / 10", fakeRepoVal.searchRecipeChunksQuery, fakeRepoVal.searchRecipeChunksLimit)
 	}
 	out := stdout.String()
-	for _, want := range []string{"SCORE", "ID", "TITLE", "0.9100", "r1", "Carbonara", "0.7200", "r2", "Pesto"} {
+	for _, want := range []string{"SCORE", "ID", "TITLE", "CHUNK", "0.9100", "r1", "Carbonara", "guanciale", "0.7200", "r2", "Pesto", "basil"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("stdout = %q, missing %q", out, want)
 		}
@@ -1004,8 +1016,8 @@ func TestRun_SearchRecipesHumanOutput(t *testing.T) {
 func TestRun_SearchRecipesJSON(t *testing.T) {
 	t.Parallel()
 	fakeRepoVal := &fakeRepo{
-		searchRecipesResult: []types.RecipeMatch{
-			{Recipe: types.Recipe{ID: "r1", Name: "Carbonara"}, Score: 0.91},
+		searchRecipeChunksResult: []types.RecipeHit{
+			{ID: "r1", Name: "Carbonara", Chunk: "eggs, pecorino", Score: 0.91},
 		},
 	}
 	factoryCalls := 0
@@ -1013,18 +1025,23 @@ func TestRun_SearchRecipesJSON(t *testing.T) {
 	if err := r.Run(context.Background(), []string{"search-recipes", "pasta", "--limit", "5", "--json"}); err != nil {
 		t.Fatalf("Run search-recipes --json: %v", err)
 	}
-	if fakeRepoVal.searchRecipesLimit != 5 {
-		t.Fatalf("limit = %d, want 5", fakeRepoVal.searchRecipesLimit)
+	if fakeRepoVal.searchRecipeChunksLimit != 5 {
+		t.Fatalf("limit = %d, want 5", fakeRepoVal.searchRecipeChunksLimit)
 	}
 	out := stdout.String()
-	if !strings.Contains(out, `"id":"r1"`) || !strings.Contains(out, `"score":0.91`) {
-		t.Fatalf("stdout = %q, want JSON match", out)
+	for _, want := range []string{`"id":"r1"`, `"name":"Carbonara"`, `"chunk":"eggs, pecorino"`, `"score":0.91`} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("stdout = %q, missing %q", out, want)
+		}
+	}
+	if strings.Contains(out, "image_base64") || strings.Contains(out, "photos") {
+		t.Fatalf("stdout = %q, slim JSON should not contain recipe photos", out)
 	}
 }
 
 func TestRun_SearchRecipesDisabledReportsToStderr(t *testing.T) {
 	t.Parallel()
-	fakeRepoVal := &fakeRepo{searchRecipesErr: repo.ErrSearchDisabled}
+	fakeRepoVal := &fakeRepo{searchRecipeChunksErr: repo.ErrSearchDisabled}
 	factoryCalls := 0
 	r, _, stderr := testRunner("", fakeRepoVal, &factoryCalls)
 	err := r.Run(context.Background(), []string{"search-recipes", "pasta"})

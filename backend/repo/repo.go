@@ -128,6 +128,13 @@ func (r *Repo) SearchRecipes(ctx context.Context, query string, limit int) ([]ty
 	return r.recipes.SearchRecipes(ctx, query, limit)
 }
 
+// SearchRecipeChunks is the slim variant of SearchRecipes: it returns
+// id/name/best-chunk/score per hit rather than the full Recipe. Used by
+// the CLI so an agent doesn't pull photo base64 through its context.
+func (r *Repo) SearchRecipeChunks(ctx context.Context, query string, limit int) ([]types.RecipeHit, error) {
+	return r.recipes.SearchRecipeChunks(ctx, query, limit)
+}
+
 // SearchEvents runs a semantic-similarity search over event
 // embeddings (one per event, keyed off user_prompt).
 func (r *Repo) SearchEvents(ctx context.Context, query string, limit int) ([]types.EventMatch, error) {

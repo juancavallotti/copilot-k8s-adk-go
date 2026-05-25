@@ -20,6 +20,7 @@ type store interface {
 	IndexRecipe(ctx context.Context, id string) error
 	ReindexRecipes(ctx context.Context, opts recipeops.ReindexOptions) error
 	SearchRecipes(ctx context.Context, query string, limit int) ([]types.RecipeMatch, error)
+	SearchRecipeChunks(ctx context.Context, query string, limit int) ([]types.RecipeHit, error)
 	Wait()
 }
 
@@ -47,6 +48,13 @@ func (s *Service) ReindexRecipes(ctx context.Context, opts recipeops.ReindexOpti
 // SearchRecipes runs a semantic search and returns ranked recipes.
 func (s *Service) SearchRecipes(ctx context.Context, query string, limit int) ([]types.RecipeMatch, error) {
 	return s.store.SearchRecipes(ctx, query, limit)
+}
+
+// SearchRecipeChunks runs the same semantic search but returns the slim
+// per-recipe form (id, name, best chunk, score). Preferred by agent
+// callers that would otherwise pull photo base64 through their context.
+func (s *Service) SearchRecipeChunks(ctx context.Context, query string, limit int) ([]types.RecipeHit, error) {
+	return s.store.SearchRecipeChunks(ctx, query, limit)
 }
 
 // Wait blocks until in-flight async embedding work in the store has

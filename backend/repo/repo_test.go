@@ -95,6 +95,10 @@ func (f *fakeRecipeStore) SearchRecipes(ctx context.Context, query string, limit
 	return nil, nil
 }
 
+func (f *fakeRecipeStore) SearchRecipeChunks(ctx context.Context, query string, limit int) ([]types.RecipeHit, error) {
+	return nil, nil
+}
+
 func (f *fakeRecipeStore) Wait() {}
 
 type fakeTraceStore struct {

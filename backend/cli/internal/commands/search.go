@@ -58,7 +58,7 @@ func (r Runner) cmdSearch(ctx context.Context, cmdRepo CommandRepo, target strin
 }
 
 func (r Runner) searchRecipes(ctx context.Context, cmdRepo CommandRepo, query string, limit int, returnJSON bool) error {
-	matches, err := cmdRepo.SearchRecipes(ctx, query, limit)
+	hits, err := cmdRepo.SearchRecipeChunks(ctx, query, limit)
 	if err != nil {
 		if errors.Is(err, repo.ErrSearchDisabled) {
 			fmt.Fprintln(r.stderr, "search disabled: set GEMINI_API_KEY or OPENAI_API_KEY")
@@ -68,18 +68,18 @@ func (r Runner) searchRecipes(ctx context.Context, cmdRepo CommandRepo, query st
 	}
 	if returnJSON {
 		enc := json.NewEncoder(r.stdout)
-		for _, m := range matches {
-			_ = enc.Encode(m)
+		for _, h := range hits {
+			_ = enc.Encode(h)
 		}
 		return nil
 	}
-	if len(matches) == 0 {
+	if len(hits) == 0 {
 		fmt.Fprintln(r.stdout, "no matches")
 		return nil
 	}
-	fmt.Fprintln(r.stdout, "SCORE\tID\tTITLE")
-	for _, m := range matches {
-		fmt.Fprintf(r.stdout, "%.4f\t%s\t%s\n", m.Score, m.ID, m.Name)
+	fmt.Fprintln(r.stdout, "SCORE\tID\tTITLE\tCHUNK")
+	for _, h := range hits {
+		fmt.Fprintf(r.stdout, "%.4f\t%s\t%s\t%s\n", h.Score, h.ID, h.Name, truncate(h.Chunk, 80))
 	}
 	return nil
 }
