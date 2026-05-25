@@ -29,6 +29,7 @@ type Event struct {
 	StartedAt  time.Time `json:"started_at"`
 	EndedAt    time.Time `json:"ended_at"`
 	TraceCount int       `json:"trace_count"`
+	UserPrompt string    `json:"user_prompt,omitempty"`
 }
 
 type Trace struct {

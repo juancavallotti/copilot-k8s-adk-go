@@ -84,6 +84,8 @@ CREATE TABLE IF NOT EXISTS events (
     CONSTRAINT events_time_order CHECK (ended_at >= started_at)
 );
 
+ALTER TABLE events ADD COLUMN IF NOT EXISTS user_prompt TEXT;
+
 CREATE INDEX IF NOT EXISTS events_ended_at_idx ON events (ended_at DESC);
 
 CREATE TABLE IF NOT EXISTS traces (
@@ -236,5 +238,18 @@ CREATE TRIGGER skills_updated_at
     BEFORE UPDATE ON skills
     FOR EACH ROW
     EXECUTE FUNCTION recipes_set_updated_at();
+
+-- Backfill events.user_prompt from the first non-empty user_prompt in each
+-- event's traces. Idempotent: skips events that already have one.
+UPDATE events e
+SET user_prompt = sub.user_prompt
+FROM (
+    SELECT DISTINCT ON (event_id) event_id, data->>'user_prompt' AS user_prompt
+    FROM traces
+    WHERE NULLIF(data->>'user_prompt', '') IS NOT NULL
+    ORDER BY event_id, occurred_at ASC
+) sub
+WHERE e.event_id = sub.event_id
+  AND (e.user_prompt IS NULL OR e.user_prompt = '');
 
 COMMIT;
