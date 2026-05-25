@@ -77,6 +77,11 @@ type fakeRepo struct {
 	reindexReports []repo.IndexRecipeReport
 	reindexErr     error
 
+	reindexEventsCalls   int
+	reindexEventsOpts    repo.ReindexEventsOptions
+	reindexEventsReports []repo.IndexEventReport
+	reindexEventsErr     error
+
 	closeCalls int
 	closeErr   error
 }
@@ -205,6 +210,17 @@ func (f *fakeRepo) ReindexRecipes(ctx context.Context, opts repo.ReindexOptions)
 		}
 	}
 	return f.reindexErr
+}
+
+func (f *fakeRepo) ReindexEvents(ctx context.Context, opts repo.ReindexEventsOptions) error {
+	f.reindexEventsCalls++
+	f.reindexEventsOpts = opts
+	for _, rep := range f.reindexEventsReports {
+		if opts.OnReport != nil {
+			opts.OnReport(rep)
+		}
+	}
+	return f.reindexEventsErr
 }
 
 func (f *fakeRepo) Close() error {
@@ -895,6 +911,44 @@ func TestRun_ClosesRepoEvenWhenCommandErrors(t *testing.T) {
 	_ = r.Run(context.Background(), []string{"reindex", "--target", "recipes"})
 	if fakeRepoVal.closeCalls != 1 {
 		t.Fatalf("Close calls = %d, want 1", fakeRepoVal.closeCalls)
+	}
+}
+
+func TestRun_ReindexEventsJSON(t *testing.T) {
+	t.Parallel()
+	fakeRepoVal := &fakeRepo{
+		reindexEventsReports: []repo.IndexEventReport{
+			{ID: "inv-1", Status: "ok"},
+		},
+	}
+	factoryCalls := 0
+	r, stdout, _ := testRunner("", fakeRepoVal, &factoryCalls)
+	if err := r.Run(context.Background(), []string{"reindex", "--target", "events", "--json"}); err != nil {
+		t.Fatalf("Run reindex events: %v", err)
+	}
+	out := stdout.String()
+	if !strings.Contains(out, `"id":"inv-1"`) || !strings.Contains(out, `"status":"ok"`) {
+		t.Fatalf("stdout = %q, want inv-1 ok", out)
+	}
+}
+
+func TestRun_ReindexAllInvokesBothTargets(t *testing.T) {
+	t.Parallel()
+	fakeRepoVal := &fakeRepo{
+		reindexReports:       []repo.IndexRecipeReport{{ID: "r1", Status: "ok"}},
+		reindexEventsReports: []repo.IndexEventReport{{ID: "inv-1", Status: "ok"}},
+	}
+	factoryCalls := 0
+	r, stdout, _ := testRunner("", fakeRepoVal, &factoryCalls)
+	if err := r.Run(context.Background(), []string{"reindex", "--target", "all"}); err != nil {
+		t.Fatalf("Run reindex all: %v", err)
+	}
+	if fakeRepoVal.reindexCalls != 1 || fakeRepoVal.reindexEventsCalls != 1 {
+		t.Fatalf("calls: recipes=%d events=%d, want 1 each", fakeRepoVal.reindexCalls, fakeRepoVal.reindexEventsCalls)
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "r1\tok") || !strings.Contains(out, "inv-1\tok") {
+		t.Fatalf("stdout = %q, want both targets reported", out)
 	}
 }
 

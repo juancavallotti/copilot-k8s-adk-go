@@ -136,6 +136,16 @@ func (f *fakeTraceStore) DeleteEventByID(ctx context.Context, eventID string) er
 	return nil
 }
 
+func (f *fakeTraceStore) IndexEvent(ctx context.Context, eventID string, force bool) error {
+	return nil
+}
+
+func (f *fakeTraceStore) ReindexEvents(ctx context.Context, opts traceops.ReindexEventsOptions) error {
+	return nil
+}
+
+func (f *fakeTraceStore) Wait() {}
+
 type fakeSkillStore struct {
 	getSkillID          string
 	getSkillByNameArg   string

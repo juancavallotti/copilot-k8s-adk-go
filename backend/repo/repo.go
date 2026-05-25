@@ -24,8 +24,10 @@ import (
 // Re-exports of internal types so external modules (cli, api) can use
 // them without reaching into internal packages.
 type (
-	ReindexOptions    = recipeops.ReindexOptions
-	IndexRecipeReport = recipeops.IndexRecipeReport
+	ReindexOptions       = recipeops.ReindexOptions
+	IndexRecipeReport    = recipeops.IndexRecipeReport
+	ReindexEventsOptions = traceops.ReindexEventsOptions
+	IndexEventReport     = traceops.IndexEventReport
 )
 
 type Repo struct {
@@ -46,14 +48,14 @@ func (r *Repo) Ping(ctx context.Context) error {
 	return r.pool.PingContext(ctx)
 }
 
-// Close drains in-flight async embedding goroutines and then closes
-// the underlying *sql.DB pool. Callers should defer this — short-lived
-// processes (CLI invocations) would otherwise orphan the goroutine
-// fired by recipe write hooks. Safe to call multiple times only if
-// the pool tolerates redundant Close; lib/pq returns an error on the
-// second call, so prefer to defer this exactly once per Repo.
+// Close drains in-flight async embedding goroutines (recipes and
+// traces) and then closes the underlying *sql.DB pool. Callers should
+// defer this — short-lived processes (CLI invocations) would otherwise
+// orphan the goroutines fired by write hooks. Prefer to defer it
+// exactly once per Repo; lib/pq errors on a second pool.Close.
 func (r *Repo) Close() error {
 	r.recipes.Wait()
+	r.traces.Wait()
 	return r.pool.Close()
 }
 
@@ -102,6 +104,17 @@ func (r *Repo) IndexRecipe(ctx context.Context, id string) error {
 // (and the agent) to backfill or rebuild the embedding table.
 func (r *Repo) ReindexRecipes(ctx context.Context, opts ReindexOptions) error {
 	return r.recipes.ReindexRecipes(ctx, opts)
+}
+
+// IndexEvent rebuilds the embedding row for one event.
+func (r *Repo) IndexEvent(ctx context.Context, eventID string, force bool) error {
+	return r.traces.IndexEvent(ctx, eventID, force)
+}
+
+// ReindexEvents streams a bulk reindex of events whose user_prompt
+// is populated.
+func (r *Repo) ReindexEvents(ctx context.Context, opts ReindexEventsOptions) error {
+	return r.traces.ReindexEvents(ctx, opts)
 }
 
 func (r *Repo) LogTrace(ctx context.Context, eventID string, occurredAt time.Time, data json.RawMessage) error {
@@ -172,7 +185,7 @@ func NewRepo() (*Repo, error) {
 	slog.Info("repo.initialized", "database", dbName)
 	return &Repo{
 		recipes:    recipesvc.NewService(recipeops.NewStore(pool, recipeops.WithEmbedClient(embedClient))),
-		traces:     tracesvc.NewService(traceops.NewStore(pool)),
+		traces:     tracesvc.NewService(traceops.NewStore(pool, traceops.WithEmbedClient(embedClient))),
 		skills:     skillsvc.NewService(skillops.NewStore(pool)),
 		embeddings: embedClient,
 		pool:       pool,

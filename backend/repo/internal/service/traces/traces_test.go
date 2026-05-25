@@ -8,6 +8,7 @@ import (
 	"time"
 
 	types "juancavallotti.com/recipe-types"
+	traceops "juancavallotti.com/recipes-repo/internal/dbops/traces"
 )
 
 type fakeStore struct {
@@ -59,6 +60,16 @@ func (f *fakeStore) DeleteEventByID(ctx context.Context, eventID string) error {
 	f.deleteEventID = eventID
 	return nil
 }
+
+func (f *fakeStore) IndexEvent(ctx context.Context, eventID string, force bool) error {
+	return nil
+}
+
+func (f *fakeStore) ReindexEvents(ctx context.Context, opts traceops.ReindexEventsOptions) error {
+	return nil
+}
+
+func (f *fakeStore) Wait() {}
 
 func TestService_LogTrace_rejectsEmptyEventID(t *testing.T) {
 	t.Parallel()

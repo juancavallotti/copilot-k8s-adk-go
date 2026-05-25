@@ -59,12 +59,21 @@ func (r Runner) cmdReindex(ctx context.Context, cmdRepo CommandRepo, args []stri
 	case "recipes":
 		return r.reindexRecipes(ctx, cmdRepo, force, limit, returnJSON)
 	case "events":
-		// Wired in Commit 4.
-		fmt.Fprintln(r.stderr, "reindex --target events is not yet implemented")
-		return ErrUsage
+		return r.reindexEvents(ctx, cmdRepo, force, limit, returnJSON)
 	case "all":
-		// Wired in Commit 4 — calls recipes then events sequentially.
-		return r.reindexRecipes(ctx, cmdRepo, force, limit, returnJSON)
+		// Run recipes, then events. Aggregate exit-code semantics:
+		// if either reports a failed row, return reindexExitFailed.
+		errR := r.reindexRecipes(ctx, cmdRepo, force, limit, returnJSON)
+		errE := r.reindexEvents(ctx, cmdRepo, force, limit, returnJSON)
+		switch {
+		case errR != nil && !errors.Is(errR, reindexExitFailed):
+			return errR
+		case errE != nil && !errors.Is(errE, reindexExitFailed):
+			return errE
+		case errors.Is(errR, reindexExitFailed) || errors.Is(errE, reindexExitFailed):
+			return reindexExitFailed
+		}
+		return nil
 	default:
 		return r.usageError(usage)
 	}
@@ -100,6 +109,43 @@ func (r Runner) reindexRecipes(ctx context.Context, cmdRepo CommandRepo, force b
 	}
 	if !returnJSON {
 		fmt.Fprintf(r.stdout, "indexed %d recipe(s) (%d ok, %d failed)\n", ok+failed, ok, failed)
+	}
+	if failed > 0 {
+		return reindexExitFailed
+	}
+	return nil
+}
+
+func (r Runner) reindexEvents(ctx context.Context, cmdRepo CommandRepo, force bool, limit int, returnJSON bool) error {
+	var ok, failed int
+	enc := json.NewEncoder(r.stdout)
+	onReport := func(rep repo.IndexEventReport) {
+		switch rep.Status {
+		case "ok":
+			ok++
+		case "error":
+			failed++
+		}
+		if returnJSON {
+			_ = enc.Encode(rep)
+			return
+		}
+		if rep.Status == "ok" {
+			fmt.Fprintf(r.stdout, "%s\tok\n", rep.ID)
+		} else {
+			fmt.Fprintf(r.stdout, "%s\terror: %s\n", rep.ID, rep.Error)
+		}
+	}
+	err := cmdRepo.ReindexEvents(ctx, repo.ReindexEventsOptions{
+		Force:    force,
+		Limit:    limit,
+		OnReport: onReport,
+	})
+	if err != nil {
+		return fmt.Errorf("reindex: %w", err)
+	}
+	if !returnJSON {
+		fmt.Fprintf(r.stdout, "indexed %d event(s) (%d ok, %d failed)\n", ok+failed, ok, failed)
 	}
 	if failed > 0 {
 		return reindexExitFailed

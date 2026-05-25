@@ -42,6 +42,7 @@ type SkillRepo interface {
 type EmbedRepo interface {
 	Embed(ctx context.Context, text string) ([]float32, error)
 	ReindexRecipes(ctx context.Context, opts repo.ReindexOptions) error
+	ReindexEvents(ctx context.Context, opts repo.ReindexEventsOptions) error
 }
 
 type CommandRepo interface {

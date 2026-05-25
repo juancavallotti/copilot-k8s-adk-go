@@ -47,7 +47,16 @@ ON CONFLICT (event_id) DO UPDATE SET
 	); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// Fire embedding only when this trace actually carried a prompt;
+	// IndexEvent is gated on event_embeddings row existence so dup-
+	// licate traces for the same event don't re-embed.
+	if prompt != "" {
+		s.indexEventAsync(ctx, eventID)
+	}
+	return nil
 }
 
 // extractUserPrompt pulls a non-empty user_prompt string out of a trace's
