@@ -94,3 +94,5 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    # Allow large attachment uploads (multipart overhead beyond the raw file).
+    nginx.ingress.kubernetes.io/proxy-body-size: "25m"
