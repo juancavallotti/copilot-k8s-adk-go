@@ -91,6 +91,8 @@ func (f *fakeRecipeStore) ReindexRecipes(ctx context.Context, opts recipeops.Rei
 	return nil
 }
 
+func (f *fakeRecipeStore) Wait() {}
+
 type fakeTraceStore struct {
 	insertEventID      string
 	insertOccurredAt   time.Time

@@ -84,6 +84,8 @@ func (f *fakeStore) ReindexRecipes(ctx context.Context, opts recipeops.ReindexOp
 	return nil
 }
 
+func (f *fakeStore) Wait() {}
+
 func TestService_GetRecipes_NoValidation(t *testing.T) {
 	t.Parallel()
 	f := &fakeStore{}

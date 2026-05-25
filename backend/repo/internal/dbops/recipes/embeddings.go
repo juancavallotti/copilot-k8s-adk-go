@@ -131,12 +131,15 @@ func (s *Store) ReindexRecipes(ctx context.Context, opts ReindexOptions) error {
 // indexRecipeAsync fires an embedding rebuild for id in a background
 // goroutine. Called from write hooks. No-op when the embedding client
 // is a no-op so dev environments without an API key don't log every
-// recipe write.
+// recipe write. The goroutine is tracked via s.wg so Store.Wait can
+// drain in-flight work before the process exits.
 func (s *Store) indexRecipeAsync(ctx context.Context, id string) {
 	if _, disabled := s.embed.(embeddings.Noop); disabled {
 		return
 	}
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), embedTimeout)
 		defer cancel()
 		if err := s.IndexRecipe(bg, id); err != nil && !errors.Is(err, embeddings.ErrDisabled) {

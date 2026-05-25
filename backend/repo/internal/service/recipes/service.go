@@ -19,6 +19,7 @@ type store interface {
 	DeleteRecipe(ctx context.Context, id string) error
 	IndexRecipe(ctx context.Context, id string) error
 	ReindexRecipes(ctx context.Context, opts recipeops.ReindexOptions) error
+	Wait()
 }
 
 type Service struct {
@@ -40,4 +41,10 @@ func (s *Service) IndexRecipe(ctx context.Context, id string) error {
 // not a user-facing write.
 func (s *Service) ReindexRecipes(ctx context.Context, opts recipeops.ReindexOptions) error {
 	return s.store.ReindexRecipes(ctx, opts)
+}
+
+// Wait blocks until in-flight async embedding work in the store has
+// completed. Forwarded so the Repo can drain on shutdown.
+func (s *Service) Wait() {
+	s.store.Wait()
 }

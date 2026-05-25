@@ -3,16 +3,19 @@ package recipes
 import (
 	"database/sql"
 	"errors"
+	"sync"
 
 	"juancavallotti.com/recipes-repo/internal/embeddings"
 )
 
 // Store runs recipe persistence against a *sql.DB connection pool.
 // It also owns the embedding client used by write hooks and the
-// reindex command.
+// reindex command, plus a WaitGroup that tracks in-flight async
+// indexing goroutines so callers can drain them on shutdown.
 type Store struct {
 	db    *sql.DB
 	embed embeddings.Client
+	wg    sync.WaitGroup
 }
 
 var errNilDB = errors.New("dbops/recipes: nil *sql.DB")
@@ -40,4 +43,12 @@ func NewStore(pool *sql.DB, opts ...StoreOption) *Store {
 		opt(s)
 	}
 	return s
+}
+
+// Wait blocks until all in-flight async embedding writes complete.
+// Callers should invoke this before closing the underlying *sql.DB,
+// otherwise short-lived processes (CLI invocations) exit before the
+// goroutine fired by indexRecipeAsync gets to commit.
+func (s *Store) Wait() {
+	s.wg.Wait()
 }

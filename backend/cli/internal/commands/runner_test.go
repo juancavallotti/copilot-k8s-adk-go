@@ -76,6 +76,9 @@ type fakeRepo struct {
 	reindexOpts    repo.ReindexOptions
 	reindexReports []repo.IndexRecipeReport
 	reindexErr     error
+
+	closeCalls int
+	closeErr   error
 }
 
 type traceEntry struct {
@@ -202,6 +205,11 @@ func (f *fakeRepo) ReindexRecipes(ctx context.Context, opts repo.ReindexOptions)
 		}
 	}
 	return f.reindexErr
+}
+
+func (f *fakeRepo) Close() error {
+	f.closeCalls++
+	return f.closeErr
 }
 
 func testRunner(stdin string, repo CommandRepo, factoryCalls *int) (Runner, *bytes.Buffer, *bytes.Buffer) {
@@ -861,6 +869,32 @@ func TestRun_ReindexRecipesHumanOutput(t *testing.T) {
 	}
 	if !strings.Contains(out, "indexed 1 recipe(s)") {
 		t.Fatalf("stdout = %q, want summary line", out)
+	}
+}
+
+func TestRun_ClosesRepoAfterCommand(t *testing.T) {
+	t.Parallel()
+	fakeRepoVal := &fakeRepo{}
+	factoryCalls := 0
+	r, _, _ := testRunner("", fakeRepoVal, &factoryCalls)
+	if err := r.Run(context.Background(), []string{"list"}); err != nil {
+		t.Fatalf("Run list: %v", err)
+	}
+	if fakeRepoVal.closeCalls != 1 {
+		t.Fatalf("Close calls = %d, want 1", fakeRepoVal.closeCalls)
+	}
+}
+
+func TestRun_ClosesRepoEvenWhenCommandErrors(t *testing.T) {
+	t.Parallel()
+	fakeRepoVal := &fakeRepo{
+		reindexReports: []repo.IndexRecipeReport{{ID: "r1", Status: "error", Error: "boom"}},
+	}
+	factoryCalls := 0
+	r, _, _ := testRunner("", fakeRepoVal, &factoryCalls)
+	_ = r.Run(context.Background(), []string{"reindex", "--target", "recipes"})
+	if fakeRepoVal.closeCalls != 1 {
+		t.Fatalf("Close calls = %d, want 1", fakeRepoVal.closeCalls)
 	}
 }
 

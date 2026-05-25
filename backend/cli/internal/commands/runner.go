@@ -49,6 +49,11 @@ type CommandRepo interface {
 	TraceRepo
 	SkillRepo
 	EmbedRepo
+	// Close drains async work (e.g. embedding goroutines fired by write
+	// hooks) and releases the DB pool. The Runner defers this so a
+	// short-lived CLI invocation doesn't exit before in-flight indexing
+	// commits.
+	Close() error
 }
 
 type RepoFactory func() (CommandRepo, error)
@@ -108,6 +113,11 @@ func (r Runner) Run(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("repo: %w", err)
 	}
+	defer func() {
+		if cerr := repo.Close(); cerr != nil {
+			r.log().Warn("cli.repo_close_failed", "err", cerr)
+		}
+	}()
 
 	switch args[0] {
 	case "list":

@@ -46,6 +46,17 @@ func (r *Repo) Ping(ctx context.Context) error {
 	return r.pool.PingContext(ctx)
 }
 
+// Close drains in-flight async embedding goroutines and then closes
+// the underlying *sql.DB pool. Callers should defer this — short-lived
+// processes (CLI invocations) would otherwise orphan the goroutine
+// fired by recipe write hooks. Safe to call multiple times only if
+// the pool tolerates redundant Close; lib/pq returns an error on the
+// second call, so prefer to defer this exactly once per Repo.
+func (r *Repo) Close() error {
+	r.recipes.Wait()
+	return r.pool.Close()
+}
+
 func (r *Repo) GetRecipes(ctx context.Context) ([]types.Recipe, error) {
 	return r.recipes.GetRecipes(ctx)
 }
