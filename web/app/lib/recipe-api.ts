@@ -31,3 +31,12 @@ export type CreateRecipeBody = {
 };
 
 export type RecipePatchBody = Partial<CreateRecipeBody>;
+
+/**
+ * A search hit: full recipe plus a cosine-similarity score in [0,1],
+ * higher = closer match. Mirrors the backend's types.RecipeMatch
+ * (Recipe fields are flattened in the JSON, so this type embeds Recipe).
+ */
+export type RecipeMatch = Recipe & {
+  score: number;
+};
