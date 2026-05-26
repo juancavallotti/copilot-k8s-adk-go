@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.4.0](https://github.com/juancavallotti/copilot-k8s-adk-go/compare/recipes-v0.3.0...recipes-v0.4.0) (2026-05-26)
+
+
+### Features
+
+* **backend:** added semantic search to backend ([50e7a00](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/50e7a00cfc126557dbf8997e80ff54b18504414b))
+* **cli:** added trace indexing ([28ff7df](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/28ff7df2f25be8d57ea25258fffd783282e4691c))
+* **cli:** cli now index recipes for semantic search asynchronously ([8dae7db](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/8dae7db5fb01861cd35096b3332de9a2f97f650b))
+* **embeddings:** Added embedding capabilities to the backend both for openai and gemini ([a0b7b7d](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/a0b7b7d8d5c6e824d3b12652f4325924f8705a2b))
+* **helm:** added ssl support to helm chart ([4582793](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/4582793ab2c89049d98e71931cc54e65f566e80a))
+* Semantic search ([65bcd3f](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/65bcd3f711adedf0446abe918e5050d26f47bec2))
+* **traces:** Added user prompt to trace events so they can be located more easily ([2922bc5](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/2922bc56dcd548ab6f03c8c63ce4b1e73c0fb7cb))
+* **web:** added recipe search to layout ([4c0f54a](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/4c0f54a20ed5f6f9f2ed1b8ad548101d77146ffa))
+
+
+### Bug Fixes
+
+* **backend:** added shudown hooks to the backend api ([cf8edfd](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/cf8edfdce031671145fdb449013376ea22816822))
+* **backend:** added slim semantic search on cli so searches don't return full recipes ([8110c17](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/8110c17c72ae099012412c3ac84e17cc9de84b44))
+* **backend:** correctly implemented gemini embedding api call ([a019598](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/a0195981ce43aa3b7b4cb757738a00035f450776))
+* **cli:** added wait group to cli so it doesn't exi t before goroutines finish ([ba15e0a](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/ba15e0a3c49fd345688bbf9b21b9d3b7d2526eb6))
+* **dev:** fixed devspace to inject secrets into the right namespace ([88f7c76](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/88f7c76ee57490c5dbdbcfa7e2d6844f312969c0))
+
+
+### Chores
+
+* added k8s topology ([7dcece9](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/7dcece9b2da2f1da3935c5fb10835f591bf088af))
+* added monorepo structure on the readme file ([64ac118](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/64ac1183b1de88dcd40791ace5aec5b744eb0f8d))
+* aded task to render values.yaml ([7f917d3](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/7f917d38ae5a40a25c36375ebf864fa40403f84b))
+* **backend:** cleared interface pollution at repo level ([f8c20a0](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/f8c20a09e8054247f0e756d9b5f7f4d289fa799c))
+* **build:** added stop task and made 'recipes' the default namespace ([52f994b](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/52f994b0ca2d054c502bc662e02b0718cdead0d7))
+* **build:** added timestamp to image tags ([a195943](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/a19594308f584adba50d0ceba85a7dd98b03a2d6))
+* **cli:** removed interface pollution by clearing up Runner composite interface ([5855b72](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/5855b72cc9bb15735faff92bd9afccee41621ec9))
+* converted unused init function into sync once ([053c113](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/053c11373bf8fd0f5efe6dc745471a837e14c201))
+* Docs ([03c0680](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/03c06803b51946ed9297fdd6d40164e8b1f339b7))
+* Document Copilot Agent architecture in README ([a475521](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/a475521415064255e763d7e78781321ff0209730))
+* Go enhancements ([b486a7c](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/b486a7c981768509323f12e4a722c90fd0deb38c))
+* **helm:** added configuration on helm chart to support the new semantic search ([f85bde1](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/f85bde11baebfffbf00d47bb8fd3062f0ef5839e))
+* implmemented ingress values rendering ([79a70bb](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/79a70bb58887bf62eb544f6c4edce8515415518b))
+* increased ingress size ([3477b1f](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/3477b1f6ddc3c3d774d927bead4deb8f9f726546))
+* updated architecture doc ([39a7fb4](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/39a7fb4d3cca7b698af00bc7215f76cd7efd8c6b))
+* updated readme ([5810c3b](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/5810c3b97d5c92b0b11432013285cd55a52fc29e))
+* **web:** enhanced display on recipe list ([20948bf](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/20948bf20b95b0052b7032e54615d7c9c003117e))
+* **web:** made recipe lis reusable on the ui ([ccb562b](https://github.com/juancavallotti/copilot-k8s-adk-go/commit/ccb562b5bc8afc3a1c818e332c2b58840abd4440))
+
 ## [0.3.0](https://github.com/juancavallotti/simple-task-monorepo/compare/recipes-v0.2.0...recipes-v0.3.0) (2026-05-23)
 
 
