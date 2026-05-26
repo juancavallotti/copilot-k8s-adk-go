@@ -131,6 +131,13 @@ Environment knobs: `TTL` (e.g. `30m`, `1h`, `4h`, `24h` — default `4h`), `TAG`
 ## Architecture
 
 ### Copilot Agent
+
+The copilot agent runs as a sidecar to the backend, it interacts with it through a CLI, which is less brittle than API calls: the agent can get the docs at leisure, expand on subcommands, etc.
+
+<img width="1209" height="510" alt="image" src="https://github.com/user-attachments/assets/6e6e9611-cffd-452e-96c5-9f158abf6176" />
+
+This architecture is also non-invasive, this means the backend is unaware of the agent and not designed for it at all.
+
 #### Agent Architecture
 
 The agent runs on its own container. It's built on top of Google ADK's `LLMAgent` abstraction.
@@ -200,37 +207,8 @@ Ingress is opt-in (`ingress.enabled=true`, default class `nginx`, host `recipes.
 
 The `/agent` route carries SSE traffic, so the chart sets `nginx.ingress.kubernetes.io/proxy-read-timeout`, `proxy-send-timeout`, and `proxy-buffering: off` to keep long-lived streaming responses flowing.
 
-```
-                           ┌───────────────────────┐
-              recipes.local│      Ingress (nginx)  │
-              ─────────────▶                       │
-                           └──────┬──────────┬─────┘
-                              /          /agent
-                              ▼              ▼
-                      ┌──────────────┐  ┌──────────────┐
-                      │ web Service  │  │ agent Service│
-                      │   :3000      │  │    :4100     │
-                      └──────┬───────┘  └──────┬───────┘
-                             │                 │
-                      ┌──────▼───────┐  ┌──────▼───────┐
-                      │ web Pod (SSR)│  │  agent Pod   │
-                      └──────┬───────┘  └──────┬───────┘
-                             │ in-cluster      │ recipes-cli
-                             ▼                 ▼
-                          ┌──────────────────────┐
-                          │   backend Service    │
-                          │        :4000         │
-                          └──────────┬───────────┘
-                                     ▼
-                              ┌──────────────┐
-                              │ backend Pod  │
-                              └──────┬───────┘
-                                     ▼
-                              ┌──────────────┐
-                              │  postgres    │
-                              │ StatefulSet  │
-                              └──────────────┘
-```
+<img width="768" alt="image" src="https://github.com/user-attachments/assets/692508fe-9a1d-424a-bf1e-e04c19b78e55" />
+
 
 ## Release Process
 
