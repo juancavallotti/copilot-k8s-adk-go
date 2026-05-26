@@ -38,13 +38,13 @@ type ReindexOptions struct {
 
 // IndexRecipe embeds the recipe's text chunks (summary, ingredients,
 // directions) and replaces its rows in recipe_embeddings. Idempotent.
-// Returns embeddings.ErrDisabled when the client is a no-op so the
+// Returns embeddings.ErrDisabled when no embedder is wired in so the
 // caller can decide whether that's an error or expected.
 func (s *Store) IndexRecipe(ctx context.Context, id string) error {
 	if s.db == nil {
 		return errNilDB
 	}
-	if _, disabled := s.embed.(embeddings.Noop); disabled {
+	if s.embed == nil {
 		return embeddings.ErrDisabled
 	}
 	rec, err := s.GetRecipe(ctx, id)
@@ -129,12 +129,12 @@ func (s *Store) ReindexRecipes(ctx context.Context, opts ReindexOptions) error {
 }
 
 // indexRecipeAsync fires an embedding rebuild for id in a background
-// goroutine. Called from write hooks. No-op when the embedding client
-// is a no-op so dev environments without an API key don't log every
-// recipe write. The goroutine is tracked via s.wg so Store.Wait can
-// drain in-flight work before the process exits.
+// goroutine. Called from write hooks. No-op when no embedder is wired
+// in, so dev environments without an API key don't log every recipe
+// write. The goroutine is tracked via s.wg so Store.Wait can drain
+// in-flight work before the process exits.
 func (s *Store) indexRecipeAsync(ctx context.Context, id string) {
-	if _, disabled := s.embed.(embeddings.Noop); disabled {
+	if s.embed == nil {
 		return
 	}
 	s.wg.Add(1)
@@ -186,7 +186,7 @@ func (s *Store) SearchRecipes(ctx context.Context, query string, limit int) ([]t
 	if s.db == nil {
 		return nil, errNilDB
 	}
-	if _, disabled := s.embed.(embeddings.Noop); disabled {
+	if s.embed == nil {
 		return nil, embeddings.ErrDisabled
 	}
 	if strings.TrimSpace(query) == "" {
@@ -255,7 +255,7 @@ func (s *Store) SearchRecipeChunks(ctx context.Context, query string, limit int)
 	if s.db == nil {
 		return nil, errNilDB
 	}
-	if _, disabled := s.embed.(embeddings.Noop); disabled {
+	if s.embed == nil {
 		return nil, embeddings.ErrDisabled
 	}
 	if strings.TrimSpace(query) == "" {

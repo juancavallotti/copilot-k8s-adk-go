@@ -19,7 +19,7 @@ var reindexExitFailed = errors.New("reindex: one or more rows failed")
 // Today only the recipes target is wired; Commit 4 will add events and
 // all. Output is human-readable by default, JSON Lines with --json so
 // the agent can parse progress.
-func (r Runner) cmdReindex(ctx context.Context, cmdRepo CommandRepo, args []string) error {
+func (r Runner) cmdReindex(ctx context.Context, cmdRepo EmbedRepo, args []string) error {
 	const usage = "usage: recipes-cli reindex --target {recipes|events|all} [--force] [--limit N] [--json]"
 
 	var target string
@@ -79,7 +79,7 @@ func (r Runner) cmdReindex(ctx context.Context, cmdRepo CommandRepo, args []stri
 	}
 }
 
-func (r Runner) reindexRecipes(ctx context.Context, cmdRepo CommandRepo, force bool, limit int, returnJSON bool) error {
+func (r Runner) reindexRecipes(ctx context.Context, cmdRepo EmbedRepo, force bool, limit int, returnJSON bool) error {
 	var ok, failed int
 	enc := json.NewEncoder(r.stdout)
 	onReport := func(rep repo.IndexRecipeReport) {
@@ -116,7 +116,7 @@ func (r Runner) reindexRecipes(ctx context.Context, cmdRepo CommandRepo, force b
 	return nil
 }
 
-func (r Runner) reindexEvents(ctx context.Context, cmdRepo CommandRepo, force bool, limit int, returnJSON bool) error {
+func (r Runner) reindexEvents(ctx context.Context, cmdRepo EmbedRepo, force bool, limit int, returnJSON bool) error {
 	var ok, failed int
 	enc := json.NewEncoder(r.stdout)
 	onReport := func(rep repo.IndexEventReport) {

@@ -8,7 +8,6 @@ import (
 
 	"github.com/joho/godotenv"
 	"juancavallotti.com/recipes-cli/internal/commands"
-	"juancavallotti.com/recipes-repo"
 )
 
 type dotenvLoadError struct {
@@ -37,9 +36,7 @@ func main() {
 		slog.Warn("dotenv.load_failed", "path", loadErr.path, "err", loadErr.err)
 	}
 
-	runner := commands.NewRunnerWithLogger(os.Stdin, os.Stdout, os.Stderr, slog.Default(), func() (commands.CommandRepo, error) {
-		return repo.NewRepo()
-	})
+	runner := commands.NewRunnerWithLogger(os.Stdin, os.Stdout, os.Stderr, slog.Default())
 	if err := runner.Run(context.Background(), os.Args[1:]); err != nil {
 		if errors.Is(err, commands.ErrUsage) {
 			os.Exit(2)

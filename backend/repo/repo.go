@@ -200,16 +200,21 @@ func NewRepo() (*Repo, error) {
 	}
 
 	embedClient, embedProvider := embeddings.NewFromEnv()
+	// The dbops stores treat a nil embedder as "disabled" and skip
+	// async indexing entirely, so we hand them nil rather than the
+	// Noop fallback when no API key is configured.
+	var storeEmbed embeddings.Client
 	if embedProvider == embeddings.ProviderNoop {
 		slog.Info("repo.embeddings_disabled", "reason", "no API key configured (set GEMINI_API_KEY or OPENAI_API_KEY)")
 	} else {
+		storeEmbed = embedClient
 		slog.Info("repo.embeddings_enabled", "provider", string(embedProvider), "dims", embeddings.Dimensions)
 	}
 
 	slog.Info("repo.initialized", "database", dbName)
 	return &Repo{
-		recipes:    recipesvc.NewService(recipeops.NewStore(pool, recipeops.WithEmbedClient(embedClient))),
-		traces:     tracesvc.NewService(traceops.NewStore(pool, traceops.WithEmbedClient(embedClient))),
+		recipes:    recipesvc.NewService(recipeops.NewStore(pool, recipeops.WithEmbedClient(storeEmbed))),
+		traces:     tracesvc.NewService(traceops.NewStore(pool, traceops.WithEmbedClient(storeEmbed))),
 		skills:     skillsvc.NewService(skillops.NewStore(pool)),
 		embeddings: embedClient,
 		pool:       pool,

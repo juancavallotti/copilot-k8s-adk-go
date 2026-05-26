@@ -48,42 +48,32 @@ type EmbedRepo interface {
 	SearchEvents(ctx context.Context, query string, limit int) ([]types.EventMatch, error)
 }
 
-type CommandRepo interface {
-	RecipeRepo
-	TraceRepo
-	SkillRepo
-	EmbedRepo
-	// Close drains async work (e.g. embedding goroutines fired by write
-	// hooks) and releases the DB pool. The Runner defers this so a
-	// short-lived CLI invocation doesn't exit before in-flight indexing
-	// commits.
-	Close() error
-}
-
-type RepoFactory func() (CommandRepo, error)
+// openRepo is the package hook for opening a real repo. Production calls
+// repo.NewRepo; tests can swap it to assert opening behavior. There is no
+// runner-level union interface: cmd methods take narrow interfaces and
+// tests call them directly with fakes.
+var openRepo = repo.NewRepo
 
 type Runner struct {
-	stdin       io.Reader
-	stdout      io.Writer
-	stderr      io.Writer
-	logger      *slog.Logger
-	repoFactory RepoFactory
+	stdin  io.Reader
+	stdout io.Writer
+	stderr io.Writer
+	logger *slog.Logger
 }
 
-func NewRunner(stdin io.Reader, stdout io.Writer, stderr io.Writer, repoFactory RepoFactory) Runner {
-	return NewRunnerWithLogger(stdin, stdout, stderr, slog.New(slog.NewJSONHandler(stderr, nil)), repoFactory)
+func NewRunner(stdin io.Reader, stdout io.Writer, stderr io.Writer) Runner {
+	return NewRunnerWithLogger(stdin, stdout, stderr, slog.New(slog.NewJSONHandler(stderr, nil)))
 }
 
-func NewRunnerWithLogger(stdin io.Reader, stdout io.Writer, stderr io.Writer, logger *slog.Logger, repoFactory RepoFactory) Runner {
+func NewRunnerWithLogger(stdin io.Reader, stdout io.Writer, stderr io.Writer, logger *slog.Logger) Runner {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return Runner{
-		stdin:       stdin,
-		stdout:      stdout,
-		stderr:      stderr,
-		logger:      logger,
-		repoFactory: repoFactory,
+		stdin:  stdin,
+		stdout: stdout,
+		stderr: stderr,
+		logger: logger,
 	}
 }
 
@@ -113,12 +103,12 @@ func (r Runner) Run(ctx context.Context, args []string) error {
 		return r.cmdSchema()
 	}
 
-	repo, err := r.repoFactory()
+	rp, err := openRepo()
 	if err != nil {
 		return fmt.Errorf("repo: %w", err)
 	}
 	defer func() {
-		if cerr := repo.Close(); cerr != nil {
+		if cerr := rp.Close(); cerr != nil {
 			r.log().Warn("cli.repo_close_failed", "err", cerr)
 		}
 	}()
@@ -128,7 +118,7 @@ func (r Runner) Run(ctx context.Context, args []string) error {
 		if len(args) != 1 {
 			return r.usageError("usage: recipes-cli list")
 		}
-		return r.cmdList(ctx, repo)
+		return r.cmdList(ctx, rp)
 	case "export":
 		if len(args) != 2 && len(args) != 3 {
 			return r.usageError("usage: recipes-cli export <id> [--image-contents]")
@@ -136,7 +126,7 @@ func (r Runner) Run(ctx context.Context, args []string) error {
 		if len(args) == 3 && args[2] != "--image-contents" {
 			return r.usageError("usage: recipes-cli export <id> [--image-contents]")
 		}
-		return r.cmdExport(ctx, repo, args[1], len(args) == 3)
+		return r.cmdExport(ctx, rp, args[1], len(args) == 3)
 	case "export-all":
 		if len(args) != 1 && len(args) != 2 {
 			return r.usageError("usage: recipes-cli export-all [--image-contents]")
@@ -144,7 +134,7 @@ func (r Runner) Run(ctx context.Context, args []string) error {
 		if len(args) == 2 && args[1] != "--image-contents" {
 			return r.usageError("usage: recipes-cli export-all [--image-contents]")
 		}
-		return r.cmdExportAll(ctx, repo, len(args) == 2)
+		return r.cmdExportAll(ctx, rp, len(args) == 2)
 	case "create":
 		const usage = "usage: recipes-cli create <path> [--json]"
 		if len(args) < 2 || len(args) > 3 {
@@ -154,7 +144,7 @@ func (r Runner) Run(ctx context.Context, args []string) error {
 		if !ok {
 			return r.usageError(usage)
 		}
-		return r.cmdCreate(ctx, repo, args[1], returnJSON)
+		return r.cmdCreate(ctx, rp, args[1], returnJSON)
 	case "patch":
 		const usage = "usage: recipes-cli patch <id> <path> [--json]"
 		if len(args) < 3 || len(args) > 4 {
@@ -164,12 +154,12 @@ func (r Runner) Run(ctx context.Context, args []string) error {
 		if !ok {
 			return r.usageError(usage)
 		}
-		return r.cmdPatch(ctx, repo, args[1], args[2], returnJSON)
+		return r.cmdPatch(ctx, rp, args[1], args[2], returnJSON)
 	case "delete":
 		if len(args) != 2 {
 			return r.usageError("usage: recipes-cli delete <id>")
 		}
-		return r.cmdDelete(ctx, repo, args[1])
+		return r.cmdDelete(ctx, rp, args[1])
 	case "add-photo":
 		const usage = "usage: recipes-cli add-photo <recipe-id> <image-path|-> [--featured] [--json]"
 		if len(args) < 3 || len(args) > 5 {
@@ -192,7 +182,7 @@ func (r Runner) Run(ctx context.Context, args []string) error {
 				return r.usageError(usage)
 			}
 		}
-		return r.cmdAddPhoto(ctx, repo, args[1], args[2], featured, returnJSON)
+		return r.cmdAddPhoto(ctx, rp, args[1], args[2], featured, returnJSON)
 	case "delete-photo":
 		const usage = "usage: recipes-cli delete-photo <recipe-id> <photo-id> [--json]"
 		if len(args) < 3 || len(args) > 4 {
@@ -202,7 +192,7 @@ func (r Runner) Run(ctx context.Context, args []string) error {
 		if !ok {
 			return r.usageError(usage)
 		}
-		return r.cmdDeletePhoto(ctx, repo, args[1], args[2], returnJSON)
+		return r.cmdDeletePhoto(ctx, rp, args[1], args[2], returnJSON)
 	case "set-featured-photo":
 		const usage = "usage: recipes-cli set-featured-photo <recipe-id> <photo-id> [--json]"
 		if len(args) < 3 || len(args) > 4 {
@@ -212,39 +202,39 @@ func (r Runner) Run(ctx context.Context, args []string) error {
 		if !ok {
 			return r.usageError(usage)
 		}
-		return r.cmdSetFeaturedPhoto(ctx, repo, args[1], args[2], returnJSON)
+		return r.cmdSetFeaturedPhoto(ctx, rp, args[1], args[2], returnJSON)
 	case "import":
 		if len(args) != 2 {
 			return r.usageError("usage: recipes-cli import <path>")
 		}
-		return r.cmdImport(ctx, repo, args[1])
+		return r.cmdImport(ctx, rp, args[1])
 	case "log-trace":
-		return r.cmdLogTrace(ctx, repo, args[1:])
+		return r.cmdLogTrace(ctx, rp, args[1:])
 	case "list-events":
-		return r.cmdListEvents(ctx, repo, args[1:])
+		return r.cmdListEvents(ctx, rp, args[1:])
 	case "list-traces":
-		return r.cmdListTraces(ctx, repo, args[1:])
+		return r.cmdListTraces(ctx, rp, args[1:])
 	case "embed-test":
 		if len(args) != 2 {
 			return r.usageError("usage: recipes-cli embed-test <text>")
 		}
-		return r.cmdEmbedTest(ctx, repo, args[1])
+		return r.cmdEmbedTest(ctx, rp, args[1])
 	case "reindex":
-		return r.cmdReindex(ctx, repo, args[1:])
+		return r.cmdReindex(ctx, rp, args[1:])
 	case "search-recipes":
-		return r.cmdSearch(ctx, repo, "recipes", args[1:])
+		return r.cmdSearch(ctx, rp, "recipes", args[1:])
 	case "search-events":
-		return r.cmdSearch(ctx, repo, "events", args[1:])
+		return r.cmdSearch(ctx, rp, "events", args[1:])
 	case "list-skills":
 		if len(args) != 1 {
 			return r.usageError("usage: recipes-cli list-skills")
 		}
-		return r.cmdListSkills(ctx, repo)
+		return r.cmdListSkills(ctx, rp)
 	case "load-skill":
 		if len(args) != 2 {
 			return r.usageError("usage: recipes-cli load-skill <name>")
 		}
-		return r.cmdLoadSkill(ctx, repo, args[1])
+		return r.cmdLoadSkill(ctx, rp, args[1])
 	default:
 		r.usage()
 		return ErrUsage

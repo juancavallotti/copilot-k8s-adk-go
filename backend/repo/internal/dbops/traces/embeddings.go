@@ -46,7 +46,7 @@ func (s *Store) IndexEvent(ctx context.Context, eventID string, force bool) erro
 	if s.db == nil {
 		return errNilDB
 	}
-	if _, disabled := s.embed.(embeddings.Noop); disabled {
+	if s.embed == nil {
 		return embeddings.ErrDisabled
 	}
 	eventID = strings.TrimSpace(eventID)
@@ -153,7 +153,7 @@ func (s *Store) SearchEvents(ctx context.Context, query string, limit int) ([]ty
 	if s.db == nil {
 		return nil, errNilDB
 	}
-	if _, disabled := s.embed.(embeddings.Noop); disabled {
+	if s.embed == nil {
 		return nil, embeddings.ErrDisabled
 	}
 	if strings.TrimSpace(query) == "" {
@@ -194,10 +194,10 @@ LIMIT $2`,
 
 // indexEventAsync fires an embedding for eventID in a background
 // goroutine. Called by InsertTrace after commit when the trace's
-// user_prompt is non-empty. No-op when the embedding client is a
-// no-op. The goroutine is tracked via s.wg so Store.Wait drains it.
+// user_prompt is non-empty. No-op when no embedder is wired in.
+// The goroutine is tracked via s.wg so Store.Wait drains it.
 func (s *Store) indexEventAsync(ctx context.Context, eventID string) {
-	if _, disabled := s.embed.(embeddings.Noop); disabled {
+	if s.embed == nil {
 		return
 	}
 	s.wg.Add(1)

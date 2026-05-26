@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -14,6 +15,12 @@ import (
 	repo "juancavallotti.com/recipes-repo"
 )
 
+// fakeRepo is the in-memory stub used by command tests. It satisfies each
+// narrow domain interface (RecipeRepo/TraceRepo/SkillRepo/EmbedRepo) so
+// tests can pass it straight to cmd methods. There is no runner-level
+// union: r.Run(...) goes through openRepo (a package var defaulting to
+// repo.NewRepo) for production, and tests of cmd behavior bypass Run by
+// calling r.cmdXxx(...) directly with this fake.
 type fakeRepo struct {
 	recipes []types.Recipe
 
@@ -82,24 +89,21 @@ type fakeRepo struct {
 	reindexEventsReports []repo.IndexEventReport
 	reindexEventsErr     error
 
-	searchRecipesCalls   int
-	searchRecipesQuery   string
-	searchRecipesLimit   int
-	searchRecipesResult  []types.RecipeMatch
-	searchRecipesErr     error
+	searchRecipesCalls       int
+	searchRecipesQuery       string
+	searchRecipesLimit       int
+	searchRecipesResult      []types.RecipeMatch
+	searchRecipesErr         error
 	searchRecipeChunksCalls  int
 	searchRecipeChunksQuery  string
 	searchRecipeChunksLimit  int
 	searchRecipeChunksResult []types.RecipeHit
 	searchRecipeChunksErr    error
-	searchEventsCalls    int
-	searchEventsQuery    string
-	searchEventsLimit    int
-	searchEventsResult   []types.EventMatch
-	searchEventsErr      error
-
-	closeCalls int
-	closeErr   error
+	searchEventsCalls        int
+	searchEventsQuery        string
+	searchEventsLimit        int
+	searchEventsResult       []types.EventMatch
+	searchEventsErr          error
 }
 
 type traceEntry struct {
@@ -239,11 +243,6 @@ func (f *fakeRepo) ReindexEvents(ctx context.Context, opts repo.ReindexEventsOpt
 	return f.reindexEventsErr
 }
 
-func (f *fakeRepo) Close() error {
-	f.closeCalls++
-	return f.closeErr
-}
-
 func (f *fakeRepo) SearchRecipes(ctx context.Context, query string, limit int) ([]types.RecipeMatch, error) {
 	f.searchRecipesCalls++
 	f.searchRecipesQuery = query
@@ -265,26 +264,28 @@ func (f *fakeRepo) SearchEvents(ctx context.Context, query string, limit int) ([
 	return f.searchEventsResult, f.searchEventsErr
 }
 
-func testRunner(stdin string, repo CommandRepo, factoryCalls *int) (Runner, *bytes.Buffer, *bytes.Buffer) {
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	r := NewRunner(strings.NewReader(stdin), &stdout, &stderr, func() (CommandRepo, error) {
-		*factoryCalls++
-		return repo, nil
-	})
+// testRunner builds a Runner with provided stdin and captured stdout/stderr.
+// Use it alongside r.cmdXxx(...) calls for cmd-behavior tests; r.Run(...) is
+// reserved for tests of the switch-level arg validation and help/schema
+// paths. When r.Run does open a repo it goes through the package-level
+// openRepo (repo.NewRepo by default), which is safe for arg-error tests
+// because sql.Open is lazy and the noop embeddings client requires no DB.
+func testRunner(stdin string) (Runner, *bytes.Buffer, *bytes.Buffer) {
+	var stdout, stderr bytes.Buffer
+	r := Runner{
+		stdin:  strings.NewReader(stdin),
+		stdout: &stdout,
+		stderr: &stderr,
+		logger: slog.New(slog.NewJSONHandler(&stderr, nil)),
+	}
 	return r, &stdout, &stderr
 }
 
-func TestRun_NoArgsPrintsHelpToStdoutAndDoesNotOpenRepo(t *testing.T) {
-	var factoryCalls int
-	r, stdout, stderr := testRunner("", &fakeRepo{}, &factoryCalls)
+func TestRun_NoArgsPrintsHelp(t *testing.T) {
+	r, stdout, stderr := testRunner("")
 
-	err := r.Run(context.Background(), nil)
-	if err != nil {
+	if err := r.Run(context.Background(), nil); err != nil {
 		t.Fatalf("err = %v, want nil", err)
-	}
-	if factoryCalls != 0 {
-		t.Fatalf("repo factory calls = %d, want 0", factoryCalls)
 	}
 	if !strings.Contains(stdout.String(), "Commands:") {
 		t.Fatalf("stdout = %q, want help", stdout.String())
@@ -297,15 +298,10 @@ func TestRun_NoArgsPrintsHelpToStdoutAndDoesNotOpenRepo(t *testing.T) {
 func TestRun_HelpFlagsPrintHelpToStdout(t *testing.T) {
 	for _, flag := range []string{"-h", "--help", "help"} {
 		t.Run(flag, func(t *testing.T) {
-			var factoryCalls int
-			r, stdout, stderr := testRunner("", &fakeRepo{}, &factoryCalls)
+			r, stdout, stderr := testRunner("")
 
-			err := r.Run(context.Background(), []string{flag})
-			if err != nil {
+			if err := r.Run(context.Background(), []string{flag}); err != nil {
 				t.Fatalf("err = %v, want nil", err)
-			}
-			if factoryCalls != 0 {
-				t.Fatalf("repo factory calls = %d, want 0", factoryCalls)
 			}
 			if !strings.Contains(stdout.String(), "Commands:") {
 				t.Fatalf("stdout = %q, want help", stdout.String())
@@ -317,15 +313,11 @@ func TestRun_HelpFlagsPrintHelpToStdout(t *testing.T) {
 	}
 }
 
-func TestRun_SchemaPrintsValidJSONAndDoesNotOpenRepo(t *testing.T) {
-	var factoryCalls int
-	r, stdout, stderr := testRunner("", &fakeRepo{}, &factoryCalls)
+func TestRun_SchemaPrintsValidJSON(t *testing.T) {
+	r, stdout, stderr := testRunner("")
 
 	if err := r.Run(context.Background(), []string{"schema"}); err != nil {
 		t.Fatalf("Run schema: %v", err)
-	}
-	if factoryCalls != 0 {
-		t.Fatalf("repo factory calls = %d, want 0", factoryCalls)
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
@@ -350,9 +342,8 @@ func TestRun_SchemaPrintsValidJSONAndDoesNotOpenRepo(t *testing.T) {
 	}
 }
 
-func TestRun_CreateReadsOneRecipeObjectAndPrintsSuccessSummary(t *testing.T) {
+func TestCmdCreate_ReadsRecipeObjectAndPrintsSuccessSummary(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
 	r, stdout, _ := testRunner(`{
 		"name": "Pancakes",
 		"description": "Breakfast",
@@ -360,13 +351,10 @@ func TestRun_CreateReadsOneRecipeObjectAndPrintsSuccessSummary(t *testing.T) {
 		"instructions": ["Mix"],
 		"category": "breakfast",
 		"image": "pancakes.jpg"
-	}`, repo, &factoryCalls)
+	}`)
 
-	if err := r.Run(context.Background(), []string{"create", "-"}); err != nil {
-		t.Fatalf("Run create: %v", err)
-	}
-	if factoryCalls != 1 {
-		t.Fatalf("repo factory calls = %d, want 1", factoryCalls)
+	if err := r.cmdCreate(context.Background(), repo, "-", false); err != nil {
+		t.Fatalf("cmdCreate: %v", err)
 	}
 	if repo.createRecipeCalls != 1 {
 		t.Fatalf("create calls = %d, want 1", repo.createRecipeCalls)
@@ -385,13 +373,12 @@ func TestRun_CreateReadsOneRecipeObjectAndPrintsSuccessSummary(t *testing.T) {
 	}
 }
 
-func TestRun_CreateWithJSONFlagPrintsCreatedRecipe(t *testing.T) {
+func TestCmdCreate_WithJSONFlagPrintsCreatedRecipe(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
-	r, stdout, _ := testRunner(`{"name":"Pancakes"}`, repo, &factoryCalls)
+	r, stdout, _ := testRunner(`{"name":"Pancakes"}`)
 
-	if err := r.Run(context.Background(), []string{"create", "-", "--json"}); err != nil {
-		t.Fatalf("Run create --json: %v", err)
+	if err := r.cmdCreate(context.Background(), repo, "-", true); err != nil {
+		t.Fatalf("cmdCreate --json: %v", err)
 	}
 	var out types.Recipe
 	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
@@ -402,14 +389,13 @@ func TestRun_CreateWithJSONFlagPrintsCreatedRecipe(t *testing.T) {
 	}
 }
 
-func TestRun_CreateRejectsUnknownFields(t *testing.T) {
+func TestCmdCreate_RejectsUnknownFields(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
-	r, _, _ := testRunner(`{"id":"client-id","name":"Pancakes"}`, repo, &factoryCalls)
+	r, _, _ := testRunner(`{"id":"client-id","name":"Pancakes"}`)
 
-	err := r.Run(context.Background(), []string{"create", "-"})
+	err := r.cmdCreate(context.Background(), repo, "-", false)
 	if err == nil {
-		t.Fatal("Run create returned nil, want unknown field error")
+		t.Fatal("cmdCreate returned nil, want unknown field error")
 	}
 	if !strings.Contains(err.Error(), `unknown field "id"`) {
 		t.Fatalf("err = %v, want unknown field id", err)
@@ -419,7 +405,7 @@ func TestRun_CreateRejectsUnknownFields(t *testing.T) {
 	}
 }
 
-func TestRun_PatchMergesProvidedFieldsAndPrintsSuccessSummary(t *testing.T) {
+func TestCmdPatch_MergesProvidedFieldsAndPrintsSuccessSummary(t *testing.T) {
 	repo := &fakeRepo{
 		recipes: []types.Recipe{{
 			ID:           "recipe-1",
@@ -431,11 +417,10 @@ func TestRun_PatchMergesProvidedFieldsAndPrintsSuccessSummary(t *testing.T) {
 			Image:        "old.jpg",
 		}},
 	}
-	var factoryCalls int
-	r, stdout, _ := testRunner(`{"name":"New","ingredients":["2 cups flour"]}`, repo, &factoryCalls)
+	r, stdout, _ := testRunner(`{"name":"New","ingredients":["2 cups flour"]}`)
 
-	if err := r.Run(context.Background(), []string{"patch", " recipe-1 ", "-"}); err != nil {
-		t.Fatalf("Run patch: %v", err)
+	if err := r.cmdPatch(context.Background(), repo, " recipe-1 ", "-", false); err != nil {
+		t.Fatalf("cmdPatch: %v", err)
 	}
 	if repo.updateRecipeCalls != 1 {
 		t.Fatalf("update calls = %d, want 1", repo.updateRecipeCalls)
@@ -462,15 +447,14 @@ func TestRun_PatchMergesProvidedFieldsAndPrintsSuccessSummary(t *testing.T) {
 	}
 }
 
-func TestRun_PatchWithJSONFlagPrintsUpdatedRecipe(t *testing.T) {
+func TestCmdPatch_WithJSONFlagPrintsUpdatedRecipe(t *testing.T) {
 	repo := &fakeRepo{
 		recipes: []types.Recipe{{ID: "recipe-1", Name: "Old", Description: "Keep"}},
 	}
-	var factoryCalls int
-	r, stdout, _ := testRunner(`{"name":"New"}`, repo, &factoryCalls)
+	r, stdout, _ := testRunner(`{"name":"New"}`)
 
-	if err := r.Run(context.Background(), []string{"patch", "recipe-1", "-", "--json"}); err != nil {
-		t.Fatalf("Run patch --json: %v", err)
+	if err := r.cmdPatch(context.Background(), repo, "recipe-1", "-", true); err != nil {
+		t.Fatalf("cmdPatch --json: %v", err)
 	}
 	var out types.Recipe
 	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
@@ -481,12 +465,11 @@ func TestRun_PatchWithJSONFlagPrintsUpdatedRecipe(t *testing.T) {
 	}
 }
 
-func TestRun_PatchRejectsEmptyPatch(t *testing.T) {
+func TestCmdPatch_RejectsEmptyPatch(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
-	r, _, _ := testRunner(`{}`, repo, &factoryCalls)
+	r, _, _ := testRunner(`{}`)
 
-	err := r.Run(context.Background(), []string{"patch", "recipe-1", "-"})
+	err := r.cmdPatch(context.Background(), repo, "recipe-1", "-", false)
 	if err == nil || err.Error() != "no fields to update" {
 		t.Fatalf("err = %v, want no fields to update", err)
 	}
@@ -495,17 +478,16 @@ func TestRun_PatchRejectsEmptyPatch(t *testing.T) {
 	}
 }
 
-func TestRun_AddPhotoReadsFileAndPrintsSuccessSummary(t *testing.T) {
+func TestCmdAddPhoto_ReadsFileAndPrintsSuccessSummary(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
 	tmp := t.TempDir() + "/photo.bin"
 	if err := os.WriteFile(tmp, []byte("img"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	r, stdout, _ := testRunner("", repo, &factoryCalls)
+	r, stdout, _ := testRunner("")
 
-	if err := r.Run(context.Background(), []string{"add-photo", " recipe-1 ", tmp, "--featured"}); err != nil {
-		t.Fatalf("Run add-photo: %v", err)
+	if err := r.cmdAddPhoto(context.Background(), repo, " recipe-1 ", tmp, true, false); err != nil {
+		t.Fatalf("cmdAddPhoto: %v", err)
 	}
 	if repo.addPhotoCalls != 1 {
 		t.Fatalf("add photo calls = %d, want 1", repo.addPhotoCalls)
@@ -521,13 +503,12 @@ func TestRun_AddPhotoReadsFileAndPrintsSuccessSummary(t *testing.T) {
 	}
 }
 
-func TestRun_AddPhotoReadsBase64FromStdin(t *testing.T) {
+func TestCmdAddPhoto_ReadsBase64FromStdin(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
-	r, stdout, _ := testRunner(" aW1n\n", repo, &factoryCalls)
+	r, stdout, _ := testRunner(" aW1n\n")
 
-	if err := r.Run(context.Background(), []string{"add-photo", " recipe-1 ", "-"}); err != nil {
-		t.Fatalf("Run add-photo: %v", err)
+	if err := r.cmdAddPhoto(context.Background(), repo, " recipe-1 ", "-", false, false); err != nil {
+		t.Fatalf("cmdAddPhoto: %v", err)
 	}
 	if repo.addPhotoCalls != 1 {
 		t.Fatalf("add photo calls = %d, want 1", repo.addPhotoCalls)
@@ -540,13 +521,12 @@ func TestRun_AddPhotoReadsBase64FromStdin(t *testing.T) {
 	}
 }
 
-func TestRun_AddPhotoWithJSONFlagPrintsUpdatedRecipeWithoutImageContents(t *testing.T) {
+func TestCmdAddPhoto_WithJSONFlagPrintsUpdatedRecipeWithoutImageContents(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
-	r, stdout, _ := testRunner(" aW1n\n", repo, &factoryCalls)
+	r, stdout, _ := testRunner(" aW1n\n")
 
-	if err := r.Run(context.Background(), []string{"add-photo", "recipe-1", "-", "--featured", "--json"}); err != nil {
-		t.Fatalf("Run add-photo --json: %v", err)
+	if err := r.cmdAddPhoto(context.Background(), repo, "recipe-1", "-", true, true); err != nil {
+		t.Fatalf("cmdAddPhoto --json: %v", err)
 	}
 	var out types.Recipe
 	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
@@ -560,12 +540,11 @@ func TestRun_AddPhotoWithJSONFlagPrintsUpdatedRecipeWithoutImageContents(t *test
 	}
 }
 
-func TestRun_AddPhotoRejectsInvalidBase64FromStdin(t *testing.T) {
+func TestCmdAddPhoto_RejectsInvalidBase64FromStdin(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
-	r, _, _ := testRunner("not base64!", repo, &factoryCalls)
+	r, _, _ := testRunner("not base64!")
 
-	err := r.Run(context.Background(), []string{"add-photo", "recipe-1", "-"})
+	err := r.cmdAddPhoto(context.Background(), repo, "recipe-1", "-", false, false)
 	if err == nil || !strings.Contains(err.Error(), "invalid base64 image data") {
 		t.Fatalf("err = %v, want invalid base64 image data", err)
 	}
@@ -574,13 +553,12 @@ func TestRun_AddPhotoRejectsInvalidBase64FromStdin(t *testing.T) {
 	}
 }
 
-func TestRun_DeletePhotoRemovesPhotoAndPrintsSuccessSummary(t *testing.T) {
+func TestCmdDeletePhoto_RemovesPhotoAndPrintsSuccessSummary(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
-	r, stdout, _ := testRunner("", repo, &factoryCalls)
+	r, stdout, _ := testRunner("")
 
-	if err := r.Run(context.Background(), []string{"delete-photo", " recipe-1 ", " photo-1 "}); err != nil {
-		t.Fatalf("Run delete-photo: %v", err)
+	if err := r.cmdDeletePhoto(context.Background(), repo, " recipe-1 ", " photo-1 ", false); err != nil {
+		t.Fatalf("cmdDeletePhoto: %v", err)
 	}
 	if repo.deletePhotoCalls != 1 {
 		t.Fatalf("delete photo calls = %d, want 1", repo.deletePhotoCalls)
@@ -596,13 +574,12 @@ func TestRun_DeletePhotoRemovesPhotoAndPrintsSuccessSummary(t *testing.T) {
 	}
 }
 
-func TestRun_DeletePhotoWithJSONFlagPrintsUpdatedRecipe(t *testing.T) {
+func TestCmdDeletePhoto_WithJSONFlagPrintsUpdatedRecipe(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
-	r, stdout, _ := testRunner("", repo, &factoryCalls)
+	r, stdout, _ := testRunner("")
 
-	if err := r.Run(context.Background(), []string{"delete-photo", "recipe-1", "photo-1", "--json"}); err != nil {
-		t.Fatalf("Run delete-photo --json: %v", err)
+	if err := r.cmdDeletePhoto(context.Background(), repo, "recipe-1", "photo-1", true); err != nil {
+		t.Fatalf("cmdDeletePhoto --json: %v", err)
 	}
 	var out types.Recipe
 	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
@@ -613,13 +590,12 @@ func TestRun_DeletePhotoWithJSONFlagPrintsUpdatedRecipe(t *testing.T) {
 	}
 }
 
-func TestRun_DeleteRemovesRecipeAndPrintsSuccessSummary(t *testing.T) {
+func TestCmdDelete_RemovesRecipeAndPrintsSuccessSummary(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
-	r, stdout, stderr := testRunner("", repo, &factoryCalls)
+	r, stdout, stderr := testRunner("")
 
-	if err := r.Run(context.Background(), []string{"delete", " recipe-1 "}); err != nil {
-		t.Fatalf("Run delete: %v", err)
+	if err := r.cmdDelete(context.Background(), repo, " recipe-1 "); err != nil {
+		t.Fatalf("cmdDelete: %v", err)
 	}
 	if repo.deleteRecipeCalls != 1 {
 		t.Fatalf("delete recipe calls = %d, want 1", repo.deleteRecipeCalls)
@@ -635,13 +611,12 @@ func TestRun_DeleteRemovesRecipeAndPrintsSuccessSummary(t *testing.T) {
 	}
 }
 
-func TestRun_SetFeaturedPhotoMarksPhotoAndPrintsSuccessSummary(t *testing.T) {
+func TestCmdSetFeaturedPhoto_MarksPhotoAndPrintsSuccessSummary(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
-	r, stdout, _ := testRunner("", repo, &factoryCalls)
+	r, stdout, _ := testRunner("")
 
-	if err := r.Run(context.Background(), []string{"set-featured-photo", " recipe-1 ", " photo-1 "}); err != nil {
-		t.Fatalf("Run set-featured-photo: %v", err)
+	if err := r.cmdSetFeaturedPhoto(context.Background(), repo, " recipe-1 ", " photo-1 ", false); err != nil {
+		t.Fatalf("cmdSetFeaturedPhoto: %v", err)
 	}
 	if repo.setFeaturedPhotoCalls != 1 {
 		t.Fatalf("set featured photo calls = %d, want 1", repo.setFeaturedPhotoCalls)
@@ -657,13 +632,12 @@ func TestRun_SetFeaturedPhotoMarksPhotoAndPrintsSuccessSummary(t *testing.T) {
 	}
 }
 
-func TestRun_SetFeaturedPhotoWithJSONFlagPrintsUpdatedRecipeWithoutImageContents(t *testing.T) {
+func TestCmdSetFeaturedPhoto_WithJSONFlagPrintsUpdatedRecipeWithoutImageContents(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
-	r, stdout, _ := testRunner("", repo, &factoryCalls)
+	r, stdout, _ := testRunner("")
 
-	if err := r.Run(context.Background(), []string{"set-featured-photo", "recipe-1", "photo-1", "--json"}); err != nil {
-		t.Fatalf("Run set-featured-photo --json: %v", err)
+	if err := r.cmdSetFeaturedPhoto(context.Background(), repo, "recipe-1", "photo-1", true); err != nil {
+		t.Fatalf("cmdSetFeaturedPhoto --json: %v", err)
 	}
 	var out types.Recipe
 	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
@@ -677,13 +651,12 @@ func TestRun_SetFeaturedPhotoWithJSONFlagPrintsUpdatedRecipeWithoutImageContents
 	}
 }
 
-func TestRun_ImportReadsJSONLinesAndPrintsSuccessSummary(t *testing.T) {
+func TestCmdImport_ReadsJSONLinesAndPrintsSuccessSummary(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
-	r, stdout, _ := testRunner("{\"id\":\"1\",\"name\":\"One\"}\n\n{\"id\":\"2\",\"name\":\"Two\"}\n", repo, &factoryCalls)
+	r, stdout, _ := testRunner("{\"id\":\"1\",\"name\":\"One\"}\n\n{\"id\":\"2\",\"name\":\"Two\"}\n")
 
-	if err := r.Run(context.Background(), []string{"import", "-"}); err != nil {
-		t.Fatalf("Run import: %v", err)
+	if err := r.cmdImport(context.Background(), repo, "-"); err != nil {
+		t.Fatalf("cmdImport: %v", err)
 	}
 	if len(repo.importedRecipes) != 2 {
 		t.Fatalf("imported recipes = %d, want 2", len(repo.importedRecipes))
@@ -696,7 +669,7 @@ func TestRun_ImportReadsJSONLinesAndPrintsSuccessSummary(t *testing.T) {
 	}
 }
 
-func TestRun_ExportStripsPhotoContentsByDefault(t *testing.T) {
+func TestCmdExport_StripsPhotoContentsByDefault(t *testing.T) {
 	repo := &fakeRepo{
 		recipes: []types.Recipe{
 			{
@@ -709,11 +682,10 @@ func TestRun_ExportStripsPhotoContentsByDefault(t *testing.T) {
 			},
 		},
 	}
-	var factoryCalls int
-	r, stdout, _ := testRunner("", repo, &factoryCalls)
+	r, stdout, _ := testRunner("")
 
-	if err := r.Run(context.Background(), []string{"export", "recipe-1"}); err != nil {
-		t.Fatalf("Run export: %v", err)
+	if err := r.cmdExport(context.Background(), repo, "recipe-1", false); err != nil {
+		t.Fatalf("cmdExport: %v", err)
 	}
 	var out types.Recipe
 	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
@@ -735,7 +707,7 @@ func TestRun_ExportStripsPhotoContentsByDefault(t *testing.T) {
 	}
 }
 
-func TestRun_ExportKeepsPhotoContentsWhenFlagGiven(t *testing.T) {
+func TestCmdExport_KeepsPhotoContentsWhenFlagGiven(t *testing.T) {
 	repo := &fakeRepo{
 		recipes: []types.Recipe{
 			{
@@ -747,11 +719,10 @@ func TestRun_ExportKeepsPhotoContentsWhenFlagGiven(t *testing.T) {
 			},
 		},
 	}
-	var factoryCalls int
-	r, stdout, _ := testRunner("", repo, &factoryCalls)
+	r, stdout, _ := testRunner("")
 
-	if err := r.Run(context.Background(), []string{"export", "recipe-1", "--image-contents"}); err != nil {
-		t.Fatalf("Run export --image-contents: %v", err)
+	if err := r.cmdExport(context.Background(), repo, "recipe-1", true); err != nil {
+		t.Fatalf("cmdExport --image-contents: %v", err)
 	}
 	var out types.Recipe
 	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
@@ -763,9 +734,7 @@ func TestRun_ExportKeepsPhotoContentsWhenFlagGiven(t *testing.T) {
 }
 
 func TestRun_ExportRejectsUnknownFlag(t *testing.T) {
-	repo := &fakeRepo{recipes: []types.Recipe{{ID: "recipe-1"}}}
-	var factoryCalls int
-	r, _, stderr := testRunner("", repo, &factoryCalls)
+	r, _, stderr := testRunner("")
 
 	err := r.Run(context.Background(), []string{"export", "recipe-1", "--bogus"})
 	if !errors.Is(err, ErrUsage) {
@@ -776,18 +745,17 @@ func TestRun_ExportRejectsUnknownFlag(t *testing.T) {
 	}
 }
 
-func TestRun_ExportAllStripsPhotoContentsByDefault(t *testing.T) {
+func TestCmdExportAll_StripsPhotoContentsByDefault(t *testing.T) {
 	repo := &fakeRepo{
 		recipes: []types.Recipe{
 			{ID: "1", Name: "One", Photos: []types.Photo{{ID: "p1", ImageBase64: "aGVsbG8="}}},
 			{ID: "2", Name: "Two", Photos: []types.Photo{{ID: "p2", ImageBase64: "d29ybGQ="}}},
 		},
 	}
-	var factoryCalls int
-	r, stdout, _ := testRunner("", repo, &factoryCalls)
+	r, stdout, _ := testRunner("")
 
-	if err := r.Run(context.Background(), []string{"export-all"}); err != nil {
-		t.Fatalf("Run export-all: %v", err)
+	if err := r.cmdExportAll(context.Background(), repo, false); err != nil {
+		t.Fatalf("cmdExportAll: %v", err)
 	}
 	lines := strings.Split(strings.TrimRight(stdout.String(), "\n"), "\n")
 	if len(lines) != 2 {
@@ -804,17 +772,16 @@ func TestRun_ExportAllStripsPhotoContentsByDefault(t *testing.T) {
 	}
 }
 
-func TestRun_ExportAllKeepsPhotoContentsWhenFlagGiven(t *testing.T) {
+func TestCmdExportAll_KeepsPhotoContentsWhenFlagGiven(t *testing.T) {
 	repo := &fakeRepo{
 		recipes: []types.Recipe{
 			{ID: "1", Name: "One", Photos: []types.Photo{{ID: "p1", ImageBase64: "aGVsbG8="}}},
 		},
 	}
-	var factoryCalls int
-	r, stdout, _ := testRunner("", repo, &factoryCalls)
+	r, stdout, _ := testRunner("")
 
-	if err := r.Run(context.Background(), []string{"export-all", "--image-contents"}); err != nil {
-		t.Fatalf("Run export-all --image-contents: %v", err)
+	if err := r.cmdExportAll(context.Background(), repo, true); err != nil {
+		t.Fatalf("cmdExportAll --image-contents: %v", err)
 	}
 	var out types.Recipe
 	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout.String())), &out); err != nil {
@@ -825,18 +792,17 @@ func TestRun_ExportAllKeepsPhotoContentsWhenFlagGiven(t *testing.T) {
 	}
 }
 
-func TestRun_ListPrintsTable(t *testing.T) {
+func TestCmdList_PrintsTable(t *testing.T) {
 	repo := &fakeRepo{
 		recipes: []types.Recipe{
 			{ID: "1", Name: "One"},
 			{ID: "2", Name: "Two"},
 		},
 	}
-	var factoryCalls int
-	r, stdout, _ := testRunner("", repo, &factoryCalls)
+	r, stdout, _ := testRunner("")
 
-	if err := r.Run(context.Background(), []string{"list"}); err != nil {
-		t.Fatalf("Run list: %v", err)
+	if err := r.cmdList(context.Background(), repo); err != nil {
+		t.Fatalf("cmdList: %v", err)
 	}
 	got := stdout.String()
 	for _, want := range []string{"ID", "TITLE", "1", "One", "2", "Two"} {
@@ -846,13 +812,12 @@ func TestRun_ListPrintsTable(t *testing.T) {
 	}
 }
 
-func TestRun_EmbedTestPrintsDimensions(t *testing.T) {
+func TestCmdEmbedTest_PrintsDimensions(t *testing.T) {
 	t.Parallel()
 	repo := &fakeRepo{embedResult: []float32{0.1, 0.2, 0.3, 0.4, 0.5, 0.6}}
-	factoryCalls := 0
-	r, stdout, _ := testRunner("", repo, &factoryCalls)
-	if err := r.Run(context.Background(), []string{"embed-test", "hello world"}); err != nil {
-		t.Fatalf("Run embed-test: %v", err)
+	r, stdout, _ := testRunner("")
+	if err := r.cmdEmbedTest(context.Background(), repo, "hello world"); err != nil {
+		t.Fatalf("cmdEmbedTest: %v", err)
 	}
 	if repo.embedCalls != 1 || repo.embedInput != "hello world" {
 		t.Fatalf("embed not called as expected: calls=%d input=%q", repo.embedCalls, repo.embedInput)
@@ -865,9 +830,7 @@ func TestRun_EmbedTestPrintsDimensions(t *testing.T) {
 
 func TestRun_EmbedTestMissingArgIsUsageError(t *testing.T) {
 	t.Parallel()
-	fakeRepoVal := &fakeRepo{}
-	factoryCalls := 0
-	r, _, stderr := testRunner("", fakeRepoVal, &factoryCalls)
+	r, _, stderr := testRunner("")
 	err := r.Run(context.Background(), []string{"embed-test"})
 	if !errors.Is(err, ErrUsage) {
 		t.Fatalf("err = %v, want ErrUsage", err)
@@ -877,22 +840,18 @@ func TestRun_EmbedTestMissingArgIsUsageError(t *testing.T) {
 	}
 }
 
-func TestRun_ReindexRecipesJSON(t *testing.T) {
+func TestCmdReindex_RecipesJSON(t *testing.T) {
 	t.Parallel()
-	fakeRepoVal := &fakeRepo{
+	repo := &fakeRepo{
 		reindexReports: []repo.IndexRecipeReport{
 			{ID: "r1", Status: "ok"},
 			{ID: "r2", Status: "error", Error: "embed boom"},
 		},
 	}
-	factoryCalls := 0
-	r, stdout, _ := testRunner("", fakeRepoVal, &factoryCalls)
-	err := r.Run(context.Background(), []string{"reindex", "--target", "recipes", "--json"})
+	r, stdout, _ := testRunner("")
+	err := r.cmdReindex(context.Background(), repo, []string{"--target", "recipes", "--json"})
 	if err == nil {
 		t.Fatal("expected non-nil err (failed row)")
-	}
-	if !fakeRepoVal.reindexOpts.Force {
-		// default
 	}
 	out := stdout.String()
 	if !strings.Contains(out, `"id":"r1"`) || !strings.Contains(out, `"status":"ok"`) {
@@ -903,18 +862,17 @@ func TestRun_ReindexRecipesJSON(t *testing.T) {
 	}
 }
 
-func TestRun_ReindexRecipesHumanOutput(t *testing.T) {
+func TestCmdReindex_RecipesHumanOutput(t *testing.T) {
 	t.Parallel()
-	fakeRepoVal := &fakeRepo{
+	repo := &fakeRepo{
 		reindexReports: []repo.IndexRecipeReport{{ID: "r1", Status: "ok"}},
 	}
-	factoryCalls := 0
-	r, stdout, _ := testRunner("", fakeRepoVal, &factoryCalls)
-	if err := r.Run(context.Background(), []string{"reindex", "--target", "recipes", "--force", "--limit", "10"}); err != nil {
-		t.Fatalf("Run reindex: %v", err)
+	r, stdout, _ := testRunner("")
+	if err := r.cmdReindex(context.Background(), repo, []string{"--target", "recipes", "--force", "--limit", "10"}); err != nil {
+		t.Fatalf("cmdReindex: %v", err)
 	}
-	if !fakeRepoVal.reindexOpts.Force || fakeRepoVal.reindexOpts.Limit != 10 {
-		t.Fatalf("opts = %+v, want force=true limit=10", fakeRepoVal.reindexOpts)
+	if !repo.reindexOpts.Force || repo.reindexOpts.Limit != 10 {
+		t.Fatalf("opts = %+v, want force=true limit=10", repo.reindexOpts)
 	}
 	out := stdout.String()
 	if !strings.Contains(out, "r1\tok") {
@@ -925,43 +883,16 @@ func TestRun_ReindexRecipesHumanOutput(t *testing.T) {
 	}
 }
 
-func TestRun_ClosesRepoAfterCommand(t *testing.T) {
+func TestCmdReindex_EventsJSON(t *testing.T) {
 	t.Parallel()
-	fakeRepoVal := &fakeRepo{}
-	factoryCalls := 0
-	r, _, _ := testRunner("", fakeRepoVal, &factoryCalls)
-	if err := r.Run(context.Background(), []string{"list"}); err != nil {
-		t.Fatalf("Run list: %v", err)
-	}
-	if fakeRepoVal.closeCalls != 1 {
-		t.Fatalf("Close calls = %d, want 1", fakeRepoVal.closeCalls)
-	}
-}
-
-func TestRun_ClosesRepoEvenWhenCommandErrors(t *testing.T) {
-	t.Parallel()
-	fakeRepoVal := &fakeRepo{
-		reindexReports: []repo.IndexRecipeReport{{ID: "r1", Status: "error", Error: "boom"}},
-	}
-	factoryCalls := 0
-	r, _, _ := testRunner("", fakeRepoVal, &factoryCalls)
-	_ = r.Run(context.Background(), []string{"reindex", "--target", "recipes"})
-	if fakeRepoVal.closeCalls != 1 {
-		t.Fatalf("Close calls = %d, want 1", fakeRepoVal.closeCalls)
-	}
-}
-
-func TestRun_ReindexEventsJSON(t *testing.T) {
-	t.Parallel()
-	fakeRepoVal := &fakeRepo{
+	repo := &fakeRepo{
 		reindexEventsReports: []repo.IndexEventReport{
 			{ID: "inv-1", Status: "ok"},
 		},
 	}
-	factoryCalls := 0
-	r, stdout, _ := testRunner("", fakeRepoVal, &factoryCalls)
-	if err := r.Run(context.Background(), []string{"reindex", "--target", "events", "--json"}); err != nil {
-		t.Fatalf("Run reindex events: %v", err)
+	r, stdout, _ := testRunner("")
+	if err := r.cmdReindex(context.Background(), repo, []string{"--target", "events", "--json"}); err != nil {
+		t.Fatalf("cmdReindex events: %v", err)
 	}
 	out := stdout.String()
 	if !strings.Contains(out, `"id":"inv-1"`) || !strings.Contains(out, `"status":"ok"`) {
@@ -969,19 +900,18 @@ func TestRun_ReindexEventsJSON(t *testing.T) {
 	}
 }
 
-func TestRun_ReindexAllInvokesBothTargets(t *testing.T) {
+func TestCmdReindex_AllInvokesBothTargets(t *testing.T) {
 	t.Parallel()
-	fakeRepoVal := &fakeRepo{
+	repo := &fakeRepo{
 		reindexReports:       []repo.IndexRecipeReport{{ID: "r1", Status: "ok"}},
 		reindexEventsReports: []repo.IndexEventReport{{ID: "inv-1", Status: "ok"}},
 	}
-	factoryCalls := 0
-	r, stdout, _ := testRunner("", fakeRepoVal, &factoryCalls)
-	if err := r.Run(context.Background(), []string{"reindex", "--target", "all"}); err != nil {
-		t.Fatalf("Run reindex all: %v", err)
+	r, stdout, _ := testRunner("")
+	if err := r.cmdReindex(context.Background(), repo, []string{"--target", "all"}); err != nil {
+		t.Fatalf("cmdReindex all: %v", err)
 	}
-	if fakeRepoVal.reindexCalls != 1 || fakeRepoVal.reindexEventsCalls != 1 {
-		t.Fatalf("calls: recipes=%d events=%d, want 1 each", fakeRepoVal.reindexCalls, fakeRepoVal.reindexEventsCalls)
+	if repo.reindexCalls != 1 || repo.reindexEventsCalls != 1 {
+		t.Fatalf("calls: recipes=%d events=%d, want 1 each", repo.reindexCalls, repo.reindexEventsCalls)
 	}
 	out := stdout.String()
 	if !strings.Contains(out, "r1\tok") || !strings.Contains(out, "inv-1\tok") {
@@ -989,21 +919,20 @@ func TestRun_ReindexAllInvokesBothTargets(t *testing.T) {
 	}
 }
 
-func TestRun_SearchRecipesHumanOutput(t *testing.T) {
+func TestCmdSearch_RecipesHumanOutput(t *testing.T) {
 	t.Parallel()
-	fakeRepoVal := &fakeRepo{
+	repo := &fakeRepo{
 		searchRecipeChunksResult: []types.RecipeHit{
 			{ID: "r1", Name: "Carbonara", Chunk: "guanciale, pecorino, eggs", Score: 0.91},
 			{ID: "r2", Name: "Pesto", Chunk: "basil, pine nuts", Score: 0.72},
 		},
 	}
-	factoryCalls := 0
-	r, stdout, _ := testRunner("", fakeRepoVal, &factoryCalls)
-	if err := r.Run(context.Background(), []string{"search-recipes", "creamy", "pasta"}); err != nil {
-		t.Fatalf("Run search-recipes: %v", err)
+	r, stdout, _ := testRunner("")
+	if err := r.cmdSearch(context.Background(), repo, "recipes", []string{"creamy", "pasta"}); err != nil {
+		t.Fatalf("cmdSearch: %v", err)
 	}
-	if fakeRepoVal.searchRecipeChunksQuery != "creamy pasta" || fakeRepoVal.searchRecipeChunksLimit != 10 {
-		t.Fatalf("query=%q limit=%d, want \"creamy pasta\" / 10", fakeRepoVal.searchRecipeChunksQuery, fakeRepoVal.searchRecipeChunksLimit)
+	if repo.searchRecipeChunksQuery != "creamy pasta" || repo.searchRecipeChunksLimit != 10 {
+		t.Fatalf("query=%q limit=%d, want \"creamy pasta\" / 10", repo.searchRecipeChunksQuery, repo.searchRecipeChunksLimit)
 	}
 	out := stdout.String()
 	for _, want := range []string{"SCORE", "ID", "TITLE", "CHUNK", "0.9100", "r1", "Carbonara", "guanciale", "0.7200", "r2", "Pesto", "basil"} {
@@ -1013,20 +942,19 @@ func TestRun_SearchRecipesHumanOutput(t *testing.T) {
 	}
 }
 
-func TestRun_SearchRecipesJSON(t *testing.T) {
+func TestCmdSearch_RecipesJSON(t *testing.T) {
 	t.Parallel()
-	fakeRepoVal := &fakeRepo{
+	repo := &fakeRepo{
 		searchRecipeChunksResult: []types.RecipeHit{
 			{ID: "r1", Name: "Carbonara", Chunk: "eggs, pecorino", Score: 0.91},
 		},
 	}
-	factoryCalls := 0
-	r, stdout, _ := testRunner("", fakeRepoVal, &factoryCalls)
-	if err := r.Run(context.Background(), []string{"search-recipes", "pasta", "--limit", "5", "--json"}); err != nil {
-		t.Fatalf("Run search-recipes --json: %v", err)
+	r, stdout, _ := testRunner("")
+	if err := r.cmdSearch(context.Background(), repo, "recipes", []string{"pasta", "--limit", "5", "--json"}); err != nil {
+		t.Fatalf("cmdSearch --json: %v", err)
 	}
-	if fakeRepoVal.searchRecipeChunksLimit != 5 {
-		t.Fatalf("limit = %d, want 5", fakeRepoVal.searchRecipeChunksLimit)
+	if repo.searchRecipeChunksLimit != 5 {
+		t.Fatalf("limit = %d, want 5", repo.searchRecipeChunksLimit)
 	}
 	out := stdout.String()
 	for _, want := range []string{`"id":"r1"`, `"name":"Carbonara"`, `"chunk":"eggs, pecorino"`, `"score":0.91`} {
@@ -1039,12 +967,11 @@ func TestRun_SearchRecipesJSON(t *testing.T) {
 	}
 }
 
-func TestRun_SearchRecipesDisabledReportsToStderr(t *testing.T) {
+func TestCmdSearch_RecipesDisabledReportsToStderr(t *testing.T) {
 	t.Parallel()
-	fakeRepoVal := &fakeRepo{searchRecipeChunksErr: repo.ErrSearchDisabled}
-	factoryCalls := 0
-	r, _, stderr := testRunner("", fakeRepoVal, &factoryCalls)
-	err := r.Run(context.Background(), []string{"search-recipes", "pasta"})
+	repoFake := &fakeRepo{searchRecipeChunksErr: repo.ErrSearchDisabled}
+	r, _, stderr := testRunner("")
+	err := r.cmdSearch(context.Background(), repoFake, "recipes", []string{"pasta"})
 	if !errors.Is(err, repo.ErrSearchDisabled) {
 		t.Fatalf("err = %v, want ErrSearchDisabled", err)
 	}
@@ -1053,17 +980,16 @@ func TestRun_SearchRecipesDisabledReportsToStderr(t *testing.T) {
 	}
 }
 
-func TestRun_SearchEventsHumanOutput(t *testing.T) {
+func TestCmdSearch_EventsHumanOutput(t *testing.T) {
 	t.Parallel()
-	fakeRepoVal := &fakeRepo{
+	repo := &fakeRepo{
 		searchEventsResult: []types.EventMatch{
 			{Event: types.Event{EventID: "inv-1", UserPrompt: "find recipes with chicken"}, Score: 0.8},
 		},
 	}
-	factoryCalls := 0
-	r, stdout, _ := testRunner("", fakeRepoVal, &factoryCalls)
-	if err := r.Run(context.Background(), []string{"search-events", "chicken"}); err != nil {
-		t.Fatalf("Run search-events: %v", err)
+	r, stdout, _ := testRunner("")
+	if err := r.cmdSearch(context.Background(), repo, "events", []string{"chicken"}); err != nil {
+		t.Fatalf("cmdSearch events: %v", err)
 	}
 	out := stdout.String()
 	for _, want := range []string{"SCORE", "EVENT_ID", "PROMPT", "0.8000", "inv-1", "find recipes with chicken"} {
@@ -1073,12 +999,11 @@ func TestRun_SearchEventsHumanOutput(t *testing.T) {
 	}
 }
 
-func TestRun_SearchMissingQueryIsUsageError(t *testing.T) {
+func TestCmdSearch_MissingQueryIsUsageError(t *testing.T) {
 	t.Parallel()
-	fakeRepoVal := &fakeRepo{}
-	factoryCalls := 0
-	r, _, stderr := testRunner("", fakeRepoVal, &factoryCalls)
-	err := r.Run(context.Background(), []string{"search-recipes"})
+	repo := &fakeRepo{}
+	r, _, stderr := testRunner("")
+	err := r.cmdSearch(context.Background(), repo, "recipes", []string{})
 	if !errors.Is(err, ErrUsage) {
 		t.Fatalf("err = %v, want ErrUsage", err)
 	}
@@ -1087,12 +1012,11 @@ func TestRun_SearchMissingQueryIsUsageError(t *testing.T) {
 	}
 }
 
-func TestRun_ReindexMissingTargetIsUsageError(t *testing.T) {
+func TestCmdReindex_MissingTargetIsUsageError(t *testing.T) {
 	t.Parallel()
-	fakeRepoVal := &fakeRepo{}
-	factoryCalls := 0
-	r, _, stderr := testRunner("", fakeRepoVal, &factoryCalls)
-	err := r.Run(context.Background(), []string{"reindex"})
+	repo := &fakeRepo{}
+	r, _, stderr := testRunner("")
+	err := r.cmdReindex(context.Background(), repo, []string{})
 	if !errors.Is(err, ErrUsage) {
 		t.Fatalf("err = %v, want ErrUsage", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // ParsedIngredient is the structured form of one ingredients[] line.
@@ -24,9 +25,20 @@ var (
 )
 
 // knownUnits is sorted longest-first in init().
-var knownUnits []string
+var _knownUnits []string
+var knownUnitsOnce sync.Once
 
-func init() {
+// getKnownUnits returns the list of known units, sorted longest-first.
+// This is used to parse ingredient lines like "2 cups flour" or "200g butter".
+// The list is built once on first use.
+func getKnownUnits() []string {
+	knownUnitsOnce.Do(func() {
+		buildKnownUnits()
+	})
+	return _knownUnits
+}
+
+func buildKnownUnits() {
 	seen := map[string]struct{}{}
 	raw := []string{
 		"fluid ounces", "fl. oz.", "fl oz",
@@ -55,7 +67,7 @@ func init() {
 			continue
 		}
 		seen[key] = struct{}{}
-		knownUnits = append(knownUnits, u)
+		_knownUnits = append(_knownUnits, u)
 	}
 }
 
@@ -166,6 +178,7 @@ func takeKnownUnit(s string) (unit string, rest string, ok bool) {
 		return "", "", false
 	}
 	lower := strings.ToLower(s)
+	knownUnits := getKnownUnits()
 	for _, cand := range knownUnits {
 		cl := strings.ToLower(cand)
 		if !strings.HasPrefix(lower, cl) {

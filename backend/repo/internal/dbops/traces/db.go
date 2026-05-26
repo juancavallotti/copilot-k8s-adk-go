@@ -1,20 +1,28 @@
 package traces
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"sync"
-
-	"juancavallotti.com/recipes-repo/internal/embeddings"
 )
 
+// Embedder is the slice of embedding-client behavior this package needs.
+// Defined here (rather than imported from the embeddings package) so the
+// store depends only on what it consumes. A nil Embedder means embeddings
+// are disabled — the InsertTrace hook short-circuits and IndexEvent/
+// SearchEvents return embeddings.ErrDisabled.
+type Embedder interface {
+	Embed(ctx context.Context, text string) ([]float32, error)
+}
+
 // Store runs trace persistence against a *sql.DB connection pool.
-// Like the recipes store, it owns an embedding client (used by the
-// async hook fired on InsertTrace) and a WaitGroup so callers can
-// drain in-flight indexing before closing the pool.
+// Like the recipes store, it owns an embedder (used by the async hook
+// fired on InsertTrace) and a WaitGroup so callers can drain in-flight
+// indexing before closing the pool.
 type Store struct {
 	db    *sql.DB
-	embed embeddings.Client
+	embed Embedder
 	wg    sync.WaitGroup
 }
 
@@ -23,20 +31,19 @@ var errNilDB = errors.New("dbops/traces: nil *sql.DB")
 // StoreOption configures a Store at construction time.
 type StoreOption func(*Store)
 
-// WithEmbedClient overrides the default no-op embedding client.
-func WithEmbedClient(c embeddings.Client) StoreOption {
+// WithEmbedClient wires an embedder into the store. Passing nil (or
+// omitting the option entirely) leaves embeddings disabled.
+func WithEmbedClient(c Embedder) StoreOption {
 	return func(s *Store) {
-		if c != nil {
-			s.embed = c
-		}
+		s.embed = c
 	}
 }
 
 // NewStore returns a Store that uses pool for all queries. By default
-// the embedding client is a no-op, so existing tests don't have to
-// thread one through.
+// no embedder is wired in, so existing tests don't have to thread one
+// through.
 func NewStore(pool *sql.DB, opts ...StoreOption) *Store {
-	s := &Store{db: pool, embed: embeddings.Noop{}}
+	s := &Store{db: pool}
 	for _, opt := range opts {
 		opt(s)
 	}

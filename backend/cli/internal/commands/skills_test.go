@@ -10,19 +10,18 @@ import (
 	repo "juancavallotti.com/recipes-repo"
 )
 
-func TestRun_ListSkillsPrintsJSONL(t *testing.T) {
-	r := &fakeRepo{listSkillsResult: []types.Skill{
+func TestCmdListSkills_PrintsJSONL(t *testing.T) {
+	fake := &fakeRepo{listSkillsResult: []types.Skill{
 		{Name: "recipe-management", Description: "Manage recipes.", Content: "ignored on list"},
 		{Name: "trace-analysis", Description: "Analyze traces.", Content: "ignored on list"},
 	}}
-	var factoryCalls int
-	runner, stdout, _ := testRunner("", r, &factoryCalls)
+	runner, stdout, _ := testRunner("")
 
-	if err := runner.Run(context.Background(), []string{"list-skills"}); err != nil {
-		t.Fatalf("Run list-skills: %v", err)
+	if err := runner.cmdListSkills(context.Background(), fake); err != nil {
+		t.Fatalf("cmdListSkills: %v", err)
 	}
-	if r.listSkillsCalls != 1 {
-		t.Fatalf("listSkillsCalls = %d, want 1", r.listSkillsCalls)
+	if fake.listSkillsCalls != 1 {
+		t.Fatalf("listSkillsCalls = %d, want 1", fake.listSkillsCalls)
 	}
 	lines := strings.Split(strings.TrimRight(stdout.String(), "\n"), "\n")
 	if len(lines) != 2 {
@@ -38,9 +37,7 @@ func TestRun_ListSkillsPrintsJSONL(t *testing.T) {
 }
 
 func TestRun_ListSkillsRejectsExtraArg(t *testing.T) {
-	r := &fakeRepo{}
-	var factoryCalls int
-	runner, _, stderr := testRunner("", r, &factoryCalls)
+	runner, _, stderr := testRunner("")
 
 	err := runner.Run(context.Background(), []string{"list-skills", "extra"})
 	if !errors.Is(err, ErrUsage) {
@@ -51,19 +48,18 @@ func TestRun_ListSkillsRejectsExtraArg(t *testing.T) {
 	}
 }
 
-func TestRun_LoadSkillPrintsContent(t *testing.T) {
+func TestCmdLoadSkill_PrintsContent(t *testing.T) {
 	want := "# Recipe Management\n\nDo the thing.\n"
-	r := &fakeRepo{getSkillByNameResult: types.Skill{
+	fake := &fakeRepo{getSkillByNameResult: types.Skill{
 		Name: "recipe-management", Description: "Manage recipes.", Content: want,
 	}}
-	var factoryCalls int
-	runner, stdout, _ := testRunner("", r, &factoryCalls)
+	runner, stdout, _ := testRunner("")
 
-	if err := runner.Run(context.Background(), []string{"load-skill", "recipe-management"}); err != nil {
-		t.Fatalf("Run load-skill: %v", err)
+	if err := runner.cmdLoadSkill(context.Background(), fake, "recipe-management"); err != nil {
+		t.Fatalf("cmdLoadSkill: %v", err)
 	}
-	if r.getSkillByNameArg != "recipe-management" {
-		t.Fatalf("arg = %q", r.getSkillByNameArg)
+	if fake.getSkillByNameArg != "recipe-management" {
+		t.Fatalf("arg = %q", fake.getSkillByNameArg)
 	}
 	if stdout.String() != want {
 		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
@@ -71,9 +67,7 @@ func TestRun_LoadSkillPrintsContent(t *testing.T) {
 }
 
 func TestRun_LoadSkillMissingArg(t *testing.T) {
-	r := &fakeRepo{}
-	var factoryCalls int
-	runner, _, stderr := testRunner("", r, &factoryCalls)
+	runner, _, stderr := testRunner("")
 
 	err := runner.Run(context.Background(), []string{"load-skill"})
 	if !errors.Is(err, ErrUsage) {
@@ -84,12 +78,11 @@ func TestRun_LoadSkillMissingArg(t *testing.T) {
 	}
 }
 
-func TestRun_LoadSkillNotFound(t *testing.T) {
-	r := &fakeRepo{getSkillByNameErr: repo.ErrSkillNotFound}
-	var factoryCalls int
-	runner, stdout, stderr := testRunner("", r, &factoryCalls)
+func TestCmdLoadSkill_NotFound(t *testing.T) {
+	fake := &fakeRepo{getSkillByNameErr: repo.ErrSkillNotFound}
+	runner, stdout, stderr := testRunner("")
 
-	err := runner.Run(context.Background(), []string{"load-skill", "bogus"})
+	err := runner.cmdLoadSkill(context.Background(), fake, "bogus")
 	if !errors.Is(err, ErrUsage) {
 		t.Fatalf("err = %v, want ErrUsage", err)
 	}

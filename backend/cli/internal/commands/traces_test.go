@@ -11,14 +11,13 @@ import (
 	types "juancavallotti.com/recipe-types"
 )
 
-func TestRun_LogTraceInsertsRowFromStdin(t *testing.T) {
+func TestCmdLogTrace_InsertsRowFromStdin(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
 	line := `{"time":"2026-05-22T10:00:00Z","level":"INFO","msg":"agent.event","invocation_id":"inv-abc","text":"hello"}`
-	r, _, stderr := testRunner(line+"\n", repo, &factoryCalls)
+	r, _, stderr := testRunner(line + "\n")
 
-	if err := r.Run(context.Background(), []string{"log-trace"}); err != nil {
-		t.Fatalf("Run log-trace: %v", err)
+	if err := r.cmdLogTrace(context.Background(), repo, []string{}); err != nil {
+		t.Fatalf("cmdLogTrace: %v", err)
 	}
 	if repo.logTraceCalls != 1 {
 		t.Fatalf("log trace calls = %d, want 1", repo.logTraceCalls)
@@ -41,13 +40,12 @@ func TestRun_LogTraceInsertsRowFromStdin(t *testing.T) {
 	}
 }
 
-func TestRun_LogTraceHonorsTimeFromTrace(t *testing.T) {
+func TestCmdLogTrace_HonorsTimeFromTrace(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
-	r, _, _ := testRunner(`{"time":"2020-01-01T00:00:00Z","invocation_id":"inv-old"}`+"\n", repo, &factoryCalls)
+	r, _, _ := testRunner(`{"time":"2020-01-01T00:00:00Z","invocation_id":"inv-old"}` + "\n")
 
-	if err := r.Run(context.Background(), []string{"log-trace"}); err != nil {
-		t.Fatalf("Run log-trace: %v", err)
+	if err := r.cmdLogTrace(context.Background(), repo, []string{}); err != nil {
+		t.Fatalf("cmdLogTrace: %v", err)
 	}
 	got := repo.logTraceEntries[0].occurredAt
 	want := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -56,9 +54,8 @@ func TestRun_LogTraceHonorsTimeFromTrace(t *testing.T) {
 	}
 }
 
-func TestRun_LogTraceSkipsLinesMissingFields(t *testing.T) {
+func TestCmdLogTrace_SkipsLinesMissingFields(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
 	stdin := strings.Join([]string{
 		`{"msg":"agent.starting","time":"2026-05-22T10:00:00Z"}`,                        // no invocation_id
 		`{"time":"2026-05-22T10:00:01Z","msg":"agent.event","invocation_id":"inv-xyz"}`, // good
@@ -67,10 +64,10 @@ func TestRun_LogTraceSkipsLinesMissingFields(t *testing.T) {
 		`not even json`, // bad json
 		``,              // blank
 	}, "\n") + "\n"
-	r, _, stderr := testRunner(stdin, repo, &factoryCalls)
+	r, _, stderr := testRunner(stdin)
 
-	if err := r.Run(context.Background(), []string{"log-trace"}); err != nil {
-		t.Fatalf("Run log-trace: %v", err)
+	if err := r.cmdLogTrace(context.Background(), repo, []string{}); err != nil {
+		t.Fatalf("cmdLogTrace: %v", err)
 	}
 	if repo.logTraceCalls != 1 {
 		t.Fatalf("log trace calls = %d, want 1", repo.logTraceCalls)
@@ -85,14 +82,13 @@ func TestRun_LogTraceSkipsLinesMissingFields(t *testing.T) {
 	}
 }
 
-func TestRun_LogTraceInsertErrorAbortsLoop(t *testing.T) {
+func TestCmdLogTrace_InsertErrorAbortsLoop(t *testing.T) {
 	repo := &fakeRepo{logTraceErr: errors.New("boom")}
-	var factoryCalls int
 	stdin := `{"time":"2026-05-22T10:00:00Z","invocation_id":"a"}` + "\n" +
 		`{"time":"2026-05-22T10:00:01Z","invocation_id":"b"}` + "\n"
-	r, _, _ := testRunner(stdin, repo, &factoryCalls)
+	r, _, _ := testRunner(stdin)
 
-	err := r.Run(context.Background(), []string{"log-trace"})
+	err := r.cmdLogTrace(context.Background(), repo, []string{})
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("err = %v, want wrapped boom", err)
 	}
@@ -101,31 +97,28 @@ func TestRun_LogTraceInsertErrorAbortsLoop(t *testing.T) {
 	}
 }
 
-func TestRun_LogTraceCustomFieldNames(t *testing.T) {
+func TestCmdLogTrace_CustomFieldNames(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
 	line := `{"ts":"2026-05-22T10:00:00Z","run_id":"run-1","msg":"x"}`
-	r, _, _ := testRunner(line+"\n", repo, &factoryCalls)
+	r, _, _ := testRunner(line + "\n")
 
-	err := r.Run(context.Background(), []string{
-		"log-trace",
+	err := r.cmdLogTrace(context.Background(), repo, []string{
 		"--event-id-field", "run_id",
 		"--time-field", "ts",
 	})
 	if err != nil {
-		t.Fatalf("Run log-trace: %v", err)
+		t.Fatalf("cmdLogTrace: %v", err)
 	}
 	if repo.logTraceCalls != 1 || repo.logTraceEntries[0].eventID != "run-1" {
 		t.Fatalf("entries = %#v", repo.logTraceEntries)
 	}
 }
 
-func TestRun_LogTraceRejectsUnknownFlag(t *testing.T) {
+func TestCmdLogTrace_RejectsUnknownFlag(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
-	r, _, stderr := testRunner("", repo, &factoryCalls)
+	r, _, stderr := testRunner("")
 
-	err := r.Run(context.Background(), []string{"log-trace", "--bogus"})
+	err := r.cmdLogTrace(context.Background(), repo, []string{"--bogus"})
 	if !errors.Is(err, ErrUsage) {
 		t.Fatalf("err = %v, want ErrUsage", err)
 	}
@@ -137,18 +130,17 @@ func TestRun_LogTraceRejectsUnknownFlag(t *testing.T) {
 	}
 }
 
-func TestRun_LogTraceFlagWithoutValue(t *testing.T) {
+func TestCmdLogTrace_FlagWithoutValue(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
-	r, _, _ := testRunner("", repo, &factoryCalls)
+	r, _, _ := testRunner("")
 
-	err := r.Run(context.Background(), []string{"log-trace", "--event-id-field"})
+	err := r.cmdLogTrace(context.Background(), repo, []string{"--event-id-field"})
 	if !errors.Is(err, ErrUsage) {
 		t.Fatalf("err = %v, want ErrUsage", err)
 	}
 }
 
-func TestRun_ListEventsPrintsJSONLinesAndForwardsDefaults(t *testing.T) {
+func TestCmdListEvents_PrintsJSONLinesAndForwardsDefaults(t *testing.T) {
 	ts1 := time.Date(2026, 5, 22, 10, 0, 0, 0, time.UTC)
 	ts2 := time.Date(2026, 5, 22, 10, 0, 10, 0, time.UTC)
 	repo := &fakeRepo{
@@ -157,11 +149,10 @@ func TestRun_ListEventsPrintsJSONLinesAndForwardsDefaults(t *testing.T) {
 			{EventID: "inv-b", StartedAt: ts1, EndedAt: ts1, TraceCount: 1},
 		},
 	}
-	var factoryCalls int
-	r, stdout, _ := testRunner("", repo, &factoryCalls)
+	r, stdout, _ := testRunner("")
 
-	if err := r.Run(context.Background(), []string{"list-events"}); err != nil {
-		t.Fatalf("Run list-events: %v", err)
+	if err := r.cmdListEvents(context.Background(), repo, []string{}); err != nil {
+		t.Fatalf("cmdListEvents: %v", err)
 	}
 	if repo.listEventsCalls != 1 {
 		t.Fatalf("list-events calls = %d, want 1", repo.listEventsCalls)
@@ -183,25 +174,23 @@ func TestRun_ListEventsPrintsJSONLinesAndForwardsDefaults(t *testing.T) {
 	}
 }
 
-func TestRun_ListEventsForwardsPagingFlags(t *testing.T) {
+func TestCmdListEvents_ForwardsPagingFlags(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
-	r, _, _ := testRunner("", repo, &factoryCalls)
+	r, _, _ := testRunner("")
 
-	if err := r.Run(context.Background(), []string{"list-events", "--limit", "25", "--offset", "10"}); err != nil {
-		t.Fatalf("Run list-events: %v", err)
+	if err := r.cmdListEvents(context.Background(), repo, []string{"--limit", "25", "--offset", "10"}); err != nil {
+		t.Fatalf("cmdListEvents: %v", err)
 	}
 	if repo.listEventsLimit != 25 || repo.listEventsOffset != 10 {
 		t.Fatalf("paging = (limit=%d, offset=%d), want (25, 10)", repo.listEventsLimit, repo.listEventsOffset)
 	}
 }
 
-func TestRun_ListEventsRejectsUnknownFlag(t *testing.T) {
+func TestCmdListEvents_RejectsUnknownFlag(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
-	r, _, stderr := testRunner("", repo, &factoryCalls)
+	r, _, stderr := testRunner("")
 
-	err := r.Run(context.Background(), []string{"list-events", "--bogus"})
+	err := r.cmdListEvents(context.Background(), repo, []string{"--bogus"})
 	if !errors.Is(err, ErrUsage) {
 		t.Fatalf("err = %v, want ErrUsage", err)
 	}
@@ -213,29 +202,27 @@ func TestRun_ListEventsRejectsUnknownFlag(t *testing.T) {
 	}
 }
 
-func TestRun_ListEventsRejectsNegativeLimit(t *testing.T) {
+func TestCmdListEvents_RejectsNegativeLimit(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
-	r, _, _ := testRunner("", repo, &factoryCalls)
+	r, _, _ := testRunner("")
 
-	err := r.Run(context.Background(), []string{"list-events", "--limit", "-3"})
+	err := r.cmdListEvents(context.Background(), repo, []string{"--limit", "-3"})
 	if err == nil || !strings.Contains(err.Error(), "--limit") {
 		t.Fatalf("err = %v, want --limit validation error", err)
 	}
 }
 
-func TestRun_ListTracesPrintsJSONLinesForEvent(t *testing.T) {
+func TestCmdListTraces_PrintsJSONLinesForEvent(t *testing.T) {
 	ts := time.Date(2026, 5, 22, 10, 0, 0, 0, time.UTC)
 	repo := &fakeRepo{
 		listTracesResult: []types.Trace{
 			{ID: "t1", EventID: "inv-a", OccurredAt: ts, Data: json.RawMessage(`{"msg":"agent.event"}`)},
 		},
 	}
-	var factoryCalls int
-	r, stdout, _ := testRunner("", repo, &factoryCalls)
+	r, stdout, _ := testRunner("")
 
-	if err := r.Run(context.Background(), []string{"list-traces", " inv-a "}); err != nil {
-		t.Fatalf("Run list-traces: %v", err)
+	if err := r.cmdListTraces(context.Background(), repo, []string{" inv-a "}); err != nil {
+		t.Fatalf("cmdListTraces: %v", err)
 	}
 	if repo.listTracesCalls != 1 || repo.listTracesEventID != "inv-a" {
 		t.Fatalf("listTraces eventID = %q, calls = %d", repo.listTracesEventID, repo.listTracesCalls)
@@ -257,25 +244,23 @@ func TestRun_ListTracesPrintsJSONLinesForEvent(t *testing.T) {
 	}
 }
 
-func TestRun_ListTracesForwardsPagingFlags(t *testing.T) {
+func TestCmdListTraces_ForwardsPagingFlags(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
-	r, _, _ := testRunner("", repo, &factoryCalls)
+	r, _, _ := testRunner("")
 
-	if err := r.Run(context.Background(), []string{"list-traces", "inv-a", "--limit", "10", "--offset", "20"}); err != nil {
-		t.Fatalf("Run list-traces: %v", err)
+	if err := r.cmdListTraces(context.Background(), repo, []string{"inv-a", "--limit", "10", "--offset", "20"}); err != nil {
+		t.Fatalf("cmdListTraces: %v", err)
 	}
 	if repo.listTracesLimit != 10 || repo.listTracesOffset != 20 {
 		t.Fatalf("paging = (limit=%d, offset=%d), want (10, 20)", repo.listTracesLimit, repo.listTracesOffset)
 	}
 }
 
-func TestRun_ListTracesRequiresEventID(t *testing.T) {
+func TestCmdListTraces_RequiresEventID(t *testing.T) {
 	repo := &fakeRepo{}
-	var factoryCalls int
-	r, _, stderr := testRunner("", repo, &factoryCalls)
+	r, _, stderr := testRunner("")
 
-	err := r.Run(context.Background(), []string{"list-traces"})
+	err := r.cmdListTraces(context.Background(), repo, []string{})
 	if !errors.Is(err, ErrUsage) {
 		t.Fatalf("err = %v, want ErrUsage", err)
 	}

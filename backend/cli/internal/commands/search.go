@@ -15,7 +15,7 @@ import (
 // `recipes-cli search-events <query>`. Default output is one row per
 // match, tab-separated: score, id, title-or-prompt. --json emits one
 // JSON object per line so the agent can parse it.
-func (r Runner) cmdSearch(ctx context.Context, cmdRepo CommandRepo, target string, args []string) error {
+func (r Runner) cmdSearch(ctx context.Context, cmdRepo EmbedRepo, target string, args []string) error {
 	usage := fmt.Sprintf("usage: recipes-cli search-%s <query> [--limit N] [--json]", target)
 	if len(args) < 1 {
 		return r.usageError(usage)
@@ -57,7 +57,7 @@ func (r Runner) cmdSearch(ctx context.Context, cmdRepo CommandRepo, target strin
 	}
 }
 
-func (r Runner) searchRecipes(ctx context.Context, cmdRepo CommandRepo, query string, limit int, returnJSON bool) error {
+func (r Runner) searchRecipes(ctx context.Context, cmdRepo EmbedRepo, query string, limit int, returnJSON bool) error {
 	hits, err := cmdRepo.SearchRecipeChunks(ctx, query, limit)
 	if err != nil {
 		if errors.Is(err, repo.ErrSearchDisabled) {
@@ -84,7 +84,7 @@ func (r Runner) searchRecipes(ctx context.Context, cmdRepo CommandRepo, query st
 	return nil
 }
 
-func (r Runner) searchEvents(ctx context.Context, cmdRepo CommandRepo, query string, limit int, returnJSON bool) error {
+func (r Runner) searchEvents(ctx context.Context, cmdRepo EmbedRepo, query string, limit int, returnJSON bool) error {
 	matches, err := cmdRepo.SearchEvents(ctx, query, limit)
 	if err != nil {
 		if errors.Is(err, repo.ErrSearchDisabled) {

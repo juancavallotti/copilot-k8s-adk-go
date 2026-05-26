@@ -97,13 +97,19 @@ tasks:
     desc: Kubernetes dev loop (build images, deploy Helm, DevSpace sync) — requires devspace + cluster
     dir: "{{.ROOT_DIR}}"
     cmds:
-      - devspace dev
+      - devspace dev -n recipes
 
   deploy:
     desc: Build images and deploy Helm only (no DevSpace file sync)
     dir: "{{.ROOT_DIR}}"
     cmds:
-      - devspace run-pipeline deploy
+      - devspace run-pipeline deploy -n recipes
+
+  stop:
+    desc: Tear down the dev cluster deployment (devspace purge)
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - devspace purge -n recipes
 
   dev:local:
     desc: API + web dev servers together (Postgres not started — use task db:up in another shell)
