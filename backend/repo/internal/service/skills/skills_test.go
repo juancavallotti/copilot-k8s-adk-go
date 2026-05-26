@@ -4,68 +4,35 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
-	types "juancavallotti.com/recipe-types"
+	"github.com/DATA-DOG/go-sqlmock"
+	skillops "juancavallotti.com/recipes-repo/internal/dbops/skills"
 )
 
-type fakeStore struct {
-	listCalls       int
-	getID           string
-	getName         string
-	createName      string
-	createDesc      string
-	createContent   string
-	updateID        string
-	updateDesc      string
-	updateContent   string
-	deleteID        string
-	createErr       error
-	updateErr       error
-	deleteErr       error
-	getByNameResult types.Skill
-}
+const testUUID = "550e8400-e29b-41d4-a716-446655440000"
 
-func (f *fakeStore) ListSkills(ctx context.Context) ([]types.Skill, error) {
-	f.listCalls++
-	return []types.Skill{{ID: "skill-id", Name: "prep"}}, nil
-}
-
-func (f *fakeStore) GetSkill(ctx context.Context, id string) (types.Skill, error) {
-	f.getID = id
-	return types.Skill{ID: id, Name: "prep"}, nil
-}
-
-func (f *fakeStore) GetSkillByName(ctx context.Context, name string) (types.Skill, error) {
-	f.getName = name
-	if f.getByNameResult.ID != "" {
-		return f.getByNameResult, nil
+func newMockService(t *testing.T) (*Service, sqlmock.Sqlmock, func()) {
+	t.Helper()
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
 	}
-	return types.Skill{ID: "skill-id", Name: name}, nil
+	return NewService(skillops.NewStore(db)), mock, func() { db.Close() }
 }
 
-func (f *fakeStore) CreateSkill(ctx context.Context, name, description, content string) (string, error) {
-	f.createName = name
-	f.createDesc = description
-	f.createContent = content
-	return "skill-id", f.createErr
-}
-
-func (f *fakeStore) UpdateSkill(ctx context.Context, id, description, content string) error {
-	f.updateID = id
-	f.updateDesc = description
-	f.updateContent = content
-	return f.updateErr
-}
-
-func (f *fakeStore) DeleteSkill(ctx context.Context, id string) error {
-	f.deleteID = id
-	return f.deleteErr
+func skillRows() *sqlmock.Rows {
+	now := time.Date(2026, 5, 23, 12, 0, 0, 0, time.UTC)
+	return sqlmock.NewRows([]string{"id", "name", "description", "content", "created_at", "updated_at"}).
+		AddRow(testUUID, "prep", "Prepare ingredients", "Instructions", now, now)
 }
 
 func TestService_ListSkills_DelegatesToStore(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := NewService(f)
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
+
+	mock.ExpectQuery("FROM skills").WillReturnRows(skillRows())
 
 	got, err := s.ListSkills(context.Background())
 	if err != nil {
@@ -74,51 +41,59 @@ func TestService_ListSkills_DelegatesToStore(t *testing.T) {
 	if len(got) != 1 || got[0].Name != "prep" {
 		t.Fatalf("got = %#v", got)
 	}
-	if f.listCalls != 1 {
-		t.Fatalf("list calls = %d, want 1", f.listCalls)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestService_GetSkill_ValidatesID(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := NewService(f)
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
 
 	_, err := s.GetSkill(context.Background(), " ")
 	if !errors.Is(err, ErrInvalidSkillID) {
 		t.Fatalf("err = %v, want ErrInvalidSkillID", err)
 	}
-	if f.getID != "" {
-		t.Fatalf("store should not be called, got id %q", f.getID)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestService_GetSkill_DelegatesToStore(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := NewService(f)
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
 
-	got, err := s.GetSkill(context.Background(), "skill-id")
+	mock.ExpectQuery("FROM skills").WithArgs(testUUID).WillReturnRows(skillRows())
+
+	got, err := s.GetSkill(context.Background(), testUUID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ID != "skill-id" || f.getID != "skill-id" {
-		t.Fatalf("got=%#v store id=%q", got, f.getID)
+	if got.ID != testUUID {
+		t.Fatalf("got = %#v", got)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestService_GetSkillByName_ValidatesName(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := NewService(f)
-
 	for _, name := range []string{"", "Upper", "-bad", "bad-", "has spaces"} {
 		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			s, mock, cleanup := newMockService(t)
+			defer cleanup()
+
 			_, err := s.GetSkillByName(context.Background(), name)
 			if !errors.Is(err, ErrInvalidSkillName) {
 				t.Fatalf("err = %v, want ErrInvalidSkillName", err)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
 			}
 		})
 	}
@@ -126,15 +101,20 @@ func TestService_GetSkillByName_ValidatesName(t *testing.T) {
 
 func TestService_GetSkillByName_DelegatesToStore(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := NewService(f)
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
+
+	mock.ExpectQuery("FROM skills").WithArgs("prep").WillReturnRows(skillRows())
 
 	got, err := s.GetSkillByName(context.Background(), "prep")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Name != "prep" || f.getName != "prep" {
-		t.Fatalf("got=%#v store name=%q", got, f.getName)
+	if got.Name != "prep" {
+		t.Fatalf("got = %#v", got)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -156,14 +136,15 @@ func TestService_CreateSkill_ValidatesInput(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			f := &fakeStore{}
-			s := NewService(f)
+			s, mock, cleanup := newMockService(t)
+			defer cleanup()
+
 			_, err := s.CreateSkill(context.Background(), tt.skillName, tt.description, tt.content)
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
-			if f.createName != "" {
-				t.Fatalf("store should not be called, got name %q", f.createName)
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
 			}
 		})
 	}
@@ -171,18 +152,22 @@ func TestService_CreateSkill_ValidatesInput(t *testing.T) {
 
 func TestService_CreateSkill_DelegatesToStore(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := NewService(f)
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
+
+	mock.ExpectQuery("INSERT INTO skills").
+		WithArgs("prep", "Prepare ingredients", "Do the prep").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(testUUID))
 
 	id, err := s.CreateSkill(context.Background(), "prep", "Prepare ingredients", "Do the prep")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id != "skill-id" {
-		t.Fatalf("id = %q, want skill-id", id)
+	if id != testUUID {
+		t.Fatalf("id = %q, want %q", id, testUUID)
 	}
-	if f.createName != "prep" || f.createDesc != "Prepare ingredients" || f.createContent != "Do the prep" {
-		t.Fatalf("create args = %q %q %q", f.createName, f.createDesc, f.createContent)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -196,22 +181,23 @@ func TestService_UpdateSkill_ValidatesInput(t *testing.T) {
 		wantErr     error
 	}{
 		{"empty id", " ", "description", "content", ErrInvalidSkillID},
-		{"empty description", "skill-id", " ", "content", ErrInvalidSkillDescription},
-		{"empty content", "skill-id", "description", " ", ErrInvalidSkillContent},
+		{"empty description", testUUID, " ", "content", ErrInvalidSkillDescription},
+		{"empty content", testUUID, "description", " ", ErrInvalidSkillContent},
 	}
 
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			f := &fakeStore{}
-			s := NewService(f)
+			s, mock, cleanup := newMockService(t)
+			defer cleanup()
+
 			err := s.UpdateSkill(context.Background(), tt.id, tt.description, tt.content)
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
-			if f.updateID != "" {
-				t.Fatalf("store should not be called, got id %q", f.updateID)
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
 			}
 		})
 	}
@@ -219,40 +205,66 @@ func TestService_UpdateSkill_ValidatesInput(t *testing.T) {
 
 func TestService_UpdateSkill_DelegatesToStore(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := NewService(f)
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
 
-	if err := s.UpdateSkill(context.Background(), "skill-id", "Updated", "Updated content"); err != nil {
+	mock.ExpectExec("UPDATE skills").
+		WithArgs(testUUID, "Updated", "Updated content").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	if err := s.UpdateSkill(context.Background(), testUUID, "Updated", "Updated content"); err != nil {
 		t.Fatal(err)
 	}
-	if f.updateID != "skill-id" || f.updateDesc != "Updated" || f.updateContent != "Updated content" {
-		t.Fatalf("update args = %q %q %q", f.updateID, f.updateDesc, f.updateContent)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestService_DeleteSkill_ValidatesID(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := NewService(f)
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
 
-	err := s.DeleteSkill(context.Background(), "")
-	if !errors.Is(err, ErrInvalidSkillID) {
+	if err := s.DeleteSkill(context.Background(), ""); !errors.Is(err, ErrInvalidSkillID) {
 		t.Fatalf("err = %v, want ErrInvalidSkillID", err)
 	}
-	if f.deleteID != "" {
-		t.Fatalf("store should not be called, got id %q", f.deleteID)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestService_DeleteSkill_DelegatesToStore(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := NewService(f)
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
 
-	if err := s.DeleteSkill(context.Background(), "skill-id"); err != nil {
+	mock.ExpectExec("DELETE FROM skills").
+		WithArgs(testUUID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	if err := s.DeleteSkill(context.Background(), testUUID); err != nil {
 		t.Fatal(err)
 	}
-	if f.deleteID != "skill-id" {
-		t.Fatalf("delete id = %q, want skill-id", f.deleteID)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestService_CreateSkill_StoreErrorPropagates(t *testing.T) {
+	t.Parallel()
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
+
+	boom := errors.New("db down")
+	mock.ExpectQuery("INSERT INTO skills").
+		WithArgs("prep", "Prepare ingredients", "Do the prep").
+		WillReturnError(boom)
+
+	_, err := s.CreateSkill(context.Background(), "prep", "Prepare ingredients", "Do the prep")
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want %v", err, boom)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }

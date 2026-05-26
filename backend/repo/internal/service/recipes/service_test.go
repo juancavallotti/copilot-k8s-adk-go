@@ -2,275 +2,339 @@ package recipes
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	types "juancavallotti.com/recipe-types"
 
 	recipeops "juancavallotti.com/recipes-repo/internal/dbops/recipes"
 )
 
-type fakeStore struct {
-	getRecipesCalls   int
-	getRecipeCalls    int
-	createCalls       int
-	createWithIDCalls int
-	updateCalls       int
-	addPhotoCalls     int
-	deletePhotoCalls  int
-	setFeaturedCalls  int
-	deleteCalls       int
+const testUUID = "550e8400-e29b-41d4-a716-446655440000"
+const photoUUID = "650e8400-e29b-41d4-a716-446655440000"
 
-	createErr         error
-	getRecipeNotFound bool
-}
-
-func (f *fakeStore) GetRecipes(ctx context.Context) ([]types.Recipe, error) {
-	f.getRecipesCalls++
-	return nil, nil
-}
-
-func (f *fakeStore) GetRecipe(ctx context.Context, id string) (types.Recipe, error) {
-	f.getRecipeCalls++
-	if f.getRecipeNotFound {
-		return types.Recipe{}, recipeops.ErrRecipeNotFound
+func newMockService(t *testing.T) (*Service, sqlmock.Sqlmock, func()) {
+	t.Helper()
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
 	}
-	return types.Recipe{ID: id, Name: "from-store"}, nil
+	return NewService(recipeops.NewStore(db)), mock, func() { db.Close() }
 }
 
-func (f *fakeStore) CreateRecipe(ctx context.Context, recipe types.Recipe) (string, error) {
-	f.createCalls++
-	if f.createErr != nil {
-		return "", f.createErr
+// expectCreateRecipeSQL sets up sqlmock expectations matching the SQL the
+// store emits for CreateRecipe / CreateRecipeWithID on a recipe with a
+// single "i" ingredient, single "s" instruction, no photos.
+func expectCreateRecipeSQL(mock sqlmock.Sqlmock, returnedID string, explicit bool) {
+	mock.ExpectBegin()
+	if explicit {
+		mock.ExpectExec("INSERT INTO recipes").
+			WillReturnResult(sqlmock.NewResult(0, 1))
+	} else {
+		mock.ExpectQuery("INSERT INTO recipes").
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(returnedID))
 	}
-	return "new-recipe-id", nil
+	mock.ExpectQuery("INSERT INTO ingredients").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
+	mock.ExpectExec("INSERT INTO recipes_ingredients").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO steps").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("DELETE FROM recipes_images").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
 }
 
-func (f *fakeStore) CreateRecipeWithID(ctx context.Context, recipe types.Recipe) error {
-	f.createWithIDCalls++
-	return nil
+func expectGetRecipeSQL(mock sqlmock.Sqlmock, id string) {
+	ts := time.Date(2026, 5, 22, 10, 0, 0, 0, time.UTC)
+	mock.ExpectQuery("FROM recipes WHERE id").
+		WithArgs(id).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "description", "category", "image", "created_at", "updated_at"}).
+			AddRow(id, "from-store", "", "", "", ts, ts))
+	mock.ExpectQuery("FROM recipes_ingredients").
+		WithArgs(id).
+		WillReturnRows(sqlmock.NewRows([]string{"quantity", "unit", "name"}))
+	mock.ExpectQuery("FROM steps").
+		WithArgs(id).
+		WillReturnRows(sqlmock.NewRows([]string{"instruction"}))
+	mock.ExpectQuery("FROM recipes_images").
+		WithArgs(id).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "image_base64", "is_featured"}))
 }
 
-func (f *fakeStore) UpdateRecipe(ctx context.Context, recipe types.Recipe) error {
-	f.updateCalls++
-	return nil
+func expectUpdateRecipeSQL(mock sqlmock.Sqlmock) {
+	mock.ExpectBegin()
+	mock.ExpectExec("UPDATE recipes").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("DELETE FROM recipes_ingredients").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("DELETE FROM steps").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery("INSERT INTO ingredients").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
+	mock.ExpectExec("INSERT INTO recipes_ingredients").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO steps").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("DELETE FROM recipes_images").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
 }
-
-func (f *fakeStore) AddRecipePhoto(ctx context.Context, recipeID string, photo types.Photo) (string, error) {
-	f.addPhotoCalls++
-	return "photo-id", nil
-}
-
-func (f *fakeStore) DeleteRecipePhoto(ctx context.Context, recipeID string, photoID string) error {
-	f.deletePhotoCalls++
-	return nil
-}
-
-func (f *fakeStore) SetFeaturedRecipePhoto(ctx context.Context, recipeID string, photoID string) error {
-	f.setFeaturedCalls++
-	return nil
-}
-
-func (f *fakeStore) DeleteRecipe(ctx context.Context, id string) error {
-	f.deleteCalls++
-	return nil
-}
-
-func (f *fakeStore) IndexRecipe(ctx context.Context, id string) error {
-	return nil
-}
-
-func (f *fakeStore) ReindexRecipes(ctx context.Context, opts recipeops.ReindexOptions) error {
-	return nil
-}
-
-func (f *fakeStore) SearchRecipes(ctx context.Context, query string, limit int) ([]types.RecipeMatch, error) {
-	return nil, nil
-}
-
-func (f *fakeStore) SearchRecipeChunks(ctx context.Context, query string, limit int) ([]types.RecipeHit, error) {
-	return nil, nil
-}
-
-func (f *fakeStore) Wait() {}
 
 func TestService_GetRecipes_NoValidation(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := &Service{store: f}
-	_, err := s.GetRecipes(context.Background())
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
+
+	mock.ExpectQuery("FROM recipes").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "description", "category", "image", "created_at", "updated_at"}))
+
+	got, err := s.GetRecipes(context.Background())
 	if err != nil {
 		t.Fatalf("GetRecipes: %v", err)
 	}
-	if f.getRecipesCalls != 1 {
-		t.Fatalf("store calls = %d, want 1", f.getRecipesCalls)
+	if len(got) != 0 {
+		t.Fatalf("len = %d, want 0", len(got))
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestService_GetRecipe_ValidationShortCircuit(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := &Service{store: f}
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
+
 	_, err := s.GetRecipe(context.Background(), "  ")
 	if !errors.Is(err, ErrInvalidRecipeID) {
 		t.Fatalf("err = %v, want ErrInvalidRecipeID", err)
 	}
-	if f.getRecipeCalls != 0 {
-		t.Fatalf("store should not be called, calls=%d", f.getRecipeCalls)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestService_GetRecipe_DelegatesToStore(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := &Service{store: f}
-	got, err := s.GetRecipe(context.Background(), "abc")
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
+
+	expectGetRecipeSQL(mock, testUUID)
+
+	got, err := s.GetRecipe(context.Background(), testUUID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ID != "abc" || got.Name != "from-store" {
+	if got.ID != testUUID || got.Name != "from-store" {
 		t.Fatalf("got %+v", got)
 	}
-	if f.getRecipeCalls != 1 {
-		t.Fatalf("store calls = %d", f.getRecipeCalls)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestService_CreateRecipe_ValidationShortCircuit(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := &Service{store: f}
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
+
 	_, err := s.CreateRecipe(context.Background(), types.Recipe{Name: ""})
 	if !errors.Is(err, ErrInvalidRecipe) {
 		t.Fatalf("err = %v", err)
 	}
-	if f.createCalls != 0 {
-		t.Fatalf("store should not be called")
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestService_CreateRecipe_DelegatesToStore(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := &Service{store: f}
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
+
+	expectCreateRecipeSQL(mock, testUUID, false)
+
 	r := types.Recipe{Name: "n", Ingredients: []string{"i"}, Instructions: []string{"s"}}
-	if _, err := s.CreateRecipe(context.Background(), r); err != nil {
+	id, err := s.CreateRecipe(context.Background(), r)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if f.createCalls != 1 {
-		t.Fatalf("createCalls = %d", f.createCalls)
+	if id != testUUID {
+		t.Fatalf("id = %q, want %q", id, testUUID)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestService_UpdateRecipe_ValidationShortCircuit(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := &Service{store: f}
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
+
 	err := s.UpdateRecipe(context.Background(), types.Recipe{ID: ""})
 	if !errors.Is(err, ErrInvalidRecipeID) {
 		t.Fatalf("err = %v", err)
 	}
-	if f.updateCalls != 0 {
-		t.Fatalf("store should not be called")
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestService_DeleteRecipe_ValidationShortCircuit(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := &Service{store: f}
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
+
 	if err := s.DeleteRecipe(context.Background(), ""); !errors.Is(err, ErrInvalidRecipeID) {
 		t.Fatalf("err = %v", err)
 	}
-	if f.deleteCalls != 0 {
-		t.Fatalf("store should not be called")
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestService_AddRecipePhoto_ValidatesBase64(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := &Service{store: f}
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
+
 	_, err := s.AddRecipePhoto(context.Background(), testUUID, types.Photo{ImageBase64: "not base64"})
 	if !errors.Is(err, ErrInvalidRecipe) {
 		t.Fatalf("err = %v, want ErrInvalidRecipe", err)
 	}
-	if f.addPhotoCalls != 0 {
-		t.Fatalf("store should not be called")
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestService_AddRecipePhoto_DelegatesToStore(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := &Service{store: f}
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT EXISTS").
+		WithArgs(testUUID).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectExec("UPDATE recipes_images").
+		WithArgs(testUUID).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery("INSERT INTO recipe_images").
+		WithArgs("aW1n").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(photoUUID))
+	mock.ExpectExec("INSERT INTO recipes_images").
+		WithArgs(testUUID, photoUUID, true).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE recipes").
+		WithArgs(testUUID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
 	id, err := s.AddRecipePhoto(context.Background(), testUUID, types.Photo{ImageBase64: "aW1n", Featured: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id != "photo-id" {
-		t.Fatalf("id = %q, want photo-id", id)
+	if id != photoUUID {
+		t.Fatalf("id = %q, want %q", id, photoUUID)
 	}
-	if f.addPhotoCalls != 1 {
-		t.Fatalf("addPhotoCalls = %d", f.addPhotoCalls)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestService_DeleteRecipePhoto_ValidationShortCircuit(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := &Service{store: f}
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
+
 	err := s.DeleteRecipePhoto(context.Background(), testUUID, " ")
 	if !errors.Is(err, ErrInvalidRecipeID) {
 		t.Fatalf("err = %v, want ErrInvalidRecipeID", err)
 	}
-	if f.deletePhotoCalls != 0 {
-		t.Fatalf("store should not be called")
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestService_DeleteRecipePhoto_DelegatesToStore(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := &Service{store: f}
-	if err := s.DeleteRecipePhoto(context.Background(), testUUID, testUUID); err != nil {
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
+
+	mock.ExpectBegin()
+	mock.ExpectExec("DELETE FROM recipes_images").
+		WithArgs(testUUID, photoUUID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("DELETE FROM recipe_images").
+		WithArgs(photoUUID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE recipes").
+		WithArgs(testUUID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	if err := s.DeleteRecipePhoto(context.Background(), testUUID, photoUUID); err != nil {
 		t.Fatal(err)
 	}
-	if f.deletePhotoCalls != 1 {
-		t.Fatalf("deletePhotoCalls = %d", f.deletePhotoCalls)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestService_SetFeaturedRecipePhoto_ValidationShortCircuit(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := &Service{store: f}
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
+
 	err := s.SetFeaturedRecipePhoto(context.Background(), testUUID, " ")
 	if !errors.Is(err, ErrInvalidRecipeID) {
 		t.Fatalf("err = %v, want ErrInvalidRecipeID", err)
 	}
-	if f.setFeaturedCalls != 0 {
-		t.Fatalf("store should not be called")
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestService_SetFeaturedRecipePhoto_DelegatesToStore(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := &Service{store: f}
-	if err := s.SetFeaturedRecipePhoto(context.Background(), testUUID, testUUID); err != nil {
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
+
+	mock.ExpectBegin()
+	mock.ExpectExec("UPDATE recipes_images").
+		WithArgs(testUUID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE recipes_images").
+		WithArgs(testUUID, photoUUID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE recipes").
+		WithArgs(testUUID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	if err := s.SetFeaturedRecipePhoto(context.Background(), testUUID, photoUUID); err != nil {
 		t.Fatal(err)
 	}
-	if f.setFeaturedCalls != 1 {
-		t.Fatalf("setFeaturedCalls = %d", f.setFeaturedCalls)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestService_CreateRecipe_StoreErrorPropagates(t *testing.T) {
 	t.Parallel()
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
+
 	want := errors.New("db down")
-	f := &fakeStore{createErr: want}
-	s := &Service{store: f}
+	mock.ExpectBegin()
+	mock.ExpectQuery("INSERT INTO recipes").WillReturnError(want)
+	mock.ExpectRollback()
+
 	r := types.Recipe{Name: "n", Ingredients: []string{"i"}, Instructions: []string{"s"}}
 	_, err := s.CreateRecipe(context.Background(), r)
 	if !errors.Is(err, want) {
@@ -278,50 +342,56 @@ func TestService_CreateRecipe_StoreErrorPropagates(t *testing.T) {
 	}
 }
 
-const testUUID = "550e8400-e29b-41d4-a716-446655440000"
-
 func TestService_ImportRecipe_EmptyID_Creates(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := &Service{store: f}
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
+
+	expectCreateRecipeSQL(mock, testUUID, false)
+
 	r := types.Recipe{Name: "n", Ingredients: []string{"i"}, Instructions: []string{"s"}}
 	if err := s.ImportRecipe(context.Background(), r); err != nil {
 		t.Fatal(err)
 	}
-	if f.createCalls != 1 || f.getRecipeCalls != 0 || f.createWithIDCalls != 0 || f.updateCalls != 0 {
-		t.Fatalf("calls create=%d get=%d withID=%d update=%d", f.createCalls, f.getRecipeCalls, f.createWithIDCalls, f.updateCalls)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestService_ImportRecipe_NewUUID_InsertsWithID(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{getRecipeNotFound: true}
-	s := &Service{store: f}
-	r := types.Recipe{
-		ID: testUUID, Name: "n", Ingredients: []string{"i"}, Instructions: []string{"s"},
-	}
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
+
+	// GetRecipe returns ErrRecipeNotFound: only the main SELECT runs and errors.
+	mock.ExpectQuery("FROM recipes WHERE id").
+		WithArgs(testUUID).
+		WillReturnError(sql.ErrNoRows)
+
+	expectCreateRecipeSQL(mock, testUUID, true)
+
+	r := types.Recipe{ID: testUUID, Name: "n", Ingredients: []string{"i"}, Instructions: []string{"s"}}
 	if err := s.ImportRecipe(context.Background(), r); err != nil {
 		t.Fatal(err)
 	}
-	if f.createWithIDCalls != 1 || f.updateCalls != 0 {
-		t.Fatalf("withID=%d update=%d", f.createWithIDCalls, f.updateCalls)
-	}
-	if f.getRecipeCalls != 1 {
-		t.Fatalf("getRecipeCalls = %d", f.getRecipeCalls)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestService_ImportRecipe_ExistingUUID_Updates(t *testing.T) {
 	t.Parallel()
-	f := &fakeStore{}
-	s := &Service{store: f}
-	r := types.Recipe{
-		ID: testUUID, Name: "n", Ingredients: []string{"i"}, Instructions: []string{"s"},
-	}
+	s, mock, cleanup := newMockService(t)
+	defer cleanup()
+
+	expectGetRecipeSQL(mock, testUUID)
+	expectUpdateRecipeSQL(mock)
+
+	r := types.Recipe{ID: testUUID, Name: "n", Ingredients: []string{"i"}, Instructions: []string{"s"}}
 	if err := s.ImportRecipe(context.Background(), r); err != nil {
 		t.Fatal(err)
 	}
-	if f.updateCalls != 1 || f.createWithIDCalls != 0 {
-		t.Fatalf("withID=%d update=%d", f.createWithIDCalls, f.updateCalls)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }

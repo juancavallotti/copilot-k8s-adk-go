@@ -7,29 +7,12 @@ import (
 	recipeops "juancavallotti.com/recipes-repo/internal/dbops/recipes"
 )
 
-type store interface {
-	GetRecipes(ctx context.Context) ([]types.Recipe, error)
-	GetRecipe(ctx context.Context, id string) (types.Recipe, error)
-	CreateRecipe(ctx context.Context, recipe types.Recipe) (string, error)
-	CreateRecipeWithID(ctx context.Context, recipe types.Recipe) error
-	UpdateRecipe(ctx context.Context, recipe types.Recipe) error
-	AddRecipePhoto(ctx context.Context, recipeID string, photo types.Photo) (string, error)
-	DeleteRecipePhoto(ctx context.Context, recipeID string, photoID string) error
-	SetFeaturedRecipePhoto(ctx context.Context, recipeID string, photoID string) error
-	DeleteRecipe(ctx context.Context, id string) error
-	IndexRecipe(ctx context.Context, id string) error
-	ReindexRecipes(ctx context.Context, opts recipeops.ReindexOptions) error
-	SearchRecipes(ctx context.Context, query string, limit int) ([]types.RecipeMatch, error)
-	SearchRecipeChunks(ctx context.Context, query string, limit int) ([]types.RecipeHit, error)
-	Wait()
-}
-
 type Service struct {
-	store store
+	store *recipeops.Store
 }
 
 // NewService wires a recipe store into the recipe service layer.
-func NewService(store store) *Service {
+func NewService(store *recipeops.Store) *Service {
 	return &Service{store: store}
 }
 
